@@ -16,21 +16,25 @@ function Merge-SettingsFiles {
 
     if (Test-Path $basePath) {
         $content = Get-Content -Path $basePath -Raw
-        try {
-            $base = $content | ConvertFrom-Json
-        }
-        catch {
-            throw "Failed to parse $Label file '$basePath': $_"
+        if (-not [string]::IsNullOrWhiteSpace($content)) {
+            try {
+                $base = $content | ConvertFrom-Json
+            }
+            catch {
+                throw "Failed to parse $Label file '$basePath': $_"
+            }
         }
     }
 
     if (Test-Path $localPath) {
         $content = Get-Content -Path $localPath -Raw
-        try {
-            $local = $content | ConvertFrom-Json
-        }
-        catch {
-            throw "Failed to parse $Label local override file '$localPath': $_"
+        if (-not [string]::IsNullOrWhiteSpace($content)) {
+            try {
+                $local = $content | ConvertFrom-Json
+            }
+            catch {
+                throw "Failed to parse $Label local override file '$localPath': $_"
+            }
         }
     }
 

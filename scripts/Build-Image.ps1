@@ -4,23 +4,57 @@ param(
     [string]$Name
 )
 
+# Detect Docker's current container OS mode
+$dockerInfo = docker info 2>&1
+if ($LASTEXITCODE -ne 0) {
+    throw 'Docker is not running. Start Docker Desktop and try again.'
+}
+$osTypeMatch = $dockerInfo | Select-String -Pattern '^\s*OSType:\s*(.+)$'
+if (-not $osTypeMatch) {
+    throw "Unable to determine Docker OS type from 'docker info' output."
+}
+$osType = ($osTypeMatch.Matches | ForEach-Object { $_.Groups[1].Value.Trim() })
+$Platform = if ($osType -eq 'windows') { 'Windows' } else { 'Linux' }
+Write-Host "Detected Docker mode: $Platform"
+
 $imageMap = @{
     'pwsh'             = @{
-        BaseImage = 'mcr.microsoft.com/powershell:lts-windowsservercore-ltsc2022'
-        Tag       = 'dclaude-pwsh:latest'
+        'Windows' = @{
+            BaseImage = 'mcr.microsoft.com/powershell:lts-windowsservercore-ltsc2022'
+            Tag       = 'dclaude-pwsh:latest'
+        }
+        'Linux'   = @{
+            BaseImage = 'mcr.microsoft.com/powershell:lts'
+            Tag       = 'dclaude-pwsh-linux:latest'
+        }
     }
     'dotnet-core'      = @{
-        BaseImage = 'mcr.microsoft.com/dotnet/sdk:8.0-windowsservercore-ltsc2022'
-        Tag       = 'dclaude-dotnet-core:latest'
+        'Windows' = @{
+            BaseImage = 'mcr.microsoft.com/dotnet/sdk:8.0-windowsservercore-ltsc2022'
+            Tag       = 'dclaude-dotnet-core:latest'
+        }
+        'Linux'   = @{
+            BaseImage = 'mcr.microsoft.com/dotnet/sdk:10.0'
+            Tag       = 'dclaude-dotnet-core-linux:latest'
+        }
     }
     'dotnet-framework' = @{
-        BaseImage = 'mcr.microsoft.com/dotnet/framework/sdk:4.8.1-windowsservercore-ltsc2022'
-        Tag       = 'dclaude-dotnet-framework:latest'
+        'Windows' = @{
+            BaseImage = 'mcr.microsoft.com/dotnet/framework/sdk:4.8.1-windowsservercore-ltsc2022'
+            Tag       = 'dclaude-dotnet-framework:latest'
+        }
     }
 }
 
-$image = $imageMap[$Name]
-$dockerfilePath = Join-Path $PSScriptRoot '..\Images\Dockerfile'
+if (-not $imageMap[$Name].ContainsKey($Platform)) {
+    $available = $imageMap[$Name].Keys -join ', '
+    throw "'$Name' is not available for $Platform. Available platforms: $available"
+}
 
-Write-Host "Building $($image.Tag) from $($image.BaseImage)..."
-docker build --build-arg "BASE_IMAGE=$($image.BaseImage)" -t $image.Tag -f $dockerfilePath (Split-Path $dockerfilePath)
+$image = $imageMap[$Name][$Platform]
+$dockerfile = if ($Platform -eq 'Linux') { 'Dockerfile.linux' } else { 'Dockerfile' }
+$imagesDir = Join-Path $PSScriptRoot '..\Images'
+$dockerfilePath = Join-Path $imagesDir $dockerfile
+
+Write-Host "Building $($image.Tag) from $($image.BaseImage) ($Platform)..."
+docker build --build-arg "BASE_IMAGE=$($image.BaseImage)" -t $image.Tag -f $dockerfilePath $imagesDir

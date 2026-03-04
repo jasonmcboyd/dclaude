@@ -1,6 +1,6 @@
 # dclaude
 
-Run Claude Code inside Docker containers. Mounts your project, Claude config, API key, and configurable volumes into an isolated container.
+Run Claude Code with `--dangerously-skip-permissions` inside Docker containers so the container itself is the security boundary. Your project, Claude config, API key, and configurable volumes are mounted into an isolated container where Claude can operate freely without risk to your host system.
 
 ## Prerequisites
 
@@ -37,9 +37,16 @@ dclaude -ImageKey pwsh
 dclaude -ImageKey dotnet -Path ~/repos/myproject -- --resume
 ```
 
-If the current directory contains a `.dclaude/settings.json` project config, you can invoke with no parameters and the image is resolved from that file:
+If the current directory has a project config pointing at a registered image, you can invoke with no parameters:
 
 ```powershell
+# Register an image in your global config
+Add-DClaudeImage -Name pwsh -Tag dclaude-pwsh:latest -Platform Windows
+
+# Create a project config referencing it
+# .dclaude/settings.json: { "imageKey": "pwsh" }
+
+# Then just run
 dclaude
 ```
 
@@ -59,29 +66,43 @@ When neither `-Image` nor `-ImageKey` is specified, the image is resolved from t
 
 ### User Config — `~/.dclaude/settings.json`
 
-Defines named images and their per-image volume mounts. Lives in your home directory and applies across all projects.
+Defines named images and their per-platform volume mounts. Lives in your home directory and applies across all projects.
 
 ```json
 {
   "images": {
-    "pwsh-win": {
-      "tag": "dclaude-pwsh:latest",
-      "volumes": ["%USERPROFILE%\\.nuget:C:/Users/ContainerUser/.nuget"]
+    "pwsh": {
+      "windows": {
+        "tag": "dclaude-pwsh:latest",
+        "volumes": ["%USERPROFILE%\\.nuget:C:/Users/ContainerUser/.nuget"]
+      },
+      "linux": {
+        "tag": "dclaude-pwsh-linux:latest"
+      }
     },
-    "node-linux": {
-      "tag": "my-node-claude:latest",
-      "volumes": ["$HOME/.npm:/root/.npm"]
+    "dotnet-core": {
+      "windows": {
+        "tag": "dclaude-dotnet-core:latest"
+      },
+      "linux": {
+        "tag": "dclaude-dotnet-core-linux:latest",
+        "volumes": ["%HOME%/.nuget:/root/.nuget"]
+      }
     }
   }
 }
 ```
 
-Each key under `images` is an image name you can pass to `-ImageKey`. The value is an object with:
+Each key under `images` is an image name you can pass to `-ImageKey`. The value is an object with one or more platform keys:
 
 | Field | Required | Description |
 |---|---|---|
-| `tag` | Yes | Docker image tag to run. |
-| `volumes` | No | Array of volume mounts in `host:container` format. Environment variables are expanded at runtime via .NET's `ExpandEnvironmentVariables`. Use `%VAR%` syntax — this works cross-platform. |
+| `images.<name>.windows` | No* | Windows platform configuration. |
+| `images.<name>.linux` | No* | Linux platform configuration. |
+| `images.<name>.<platform>.tag` | Yes | Docker image tag to run. |
+| `images.<name>.<platform>.volumes` | No | Array of volume mounts in `host:container` format. Mounted read-only by default; append `:rw` to make writable. Environment variables are expanded at runtime via .NET's `ExpandEnvironmentVariables`. Use `%VAR%` syntax — this works cross-platform. |
+
+*At least one platform must be defined per entry. `Invoke-DClaude` auto-detects the current Docker container OS and selects the matching platform.
 
 ### Project Config — `.dclaude/settings.json`
 
@@ -89,11 +110,11 @@ Place this file in a project directory to set the default image for that project
 
 ```json
 {
-  "imageKey": "pwsh"
+  "imageKey": "dotnet-core"
 }
 ```
 
-Or with a direct image tag and project-specific volume mounts:
+Or with a direct image tag and project-specific volumes:
 
 ```json
 {
@@ -102,36 +123,34 @@ Or with a direct image tag and project-specific volume mounts:
 }
 ```
 
-Container paths in volume mounts depend on the image's OS — use `C:/workspace/...` for Windows containers or `/workspace/...` for Linux containers.
-
 | Field | Description |
 |---|---|
 | `image` | Direct Docker image tag. Takes precedence over `imageKey`. |
-| `imageKey` | References a key in the user config `images` map. |
-| `volumes` | Project-specific volume mounts added alongside any image-level volumes from the user config. |
+| `imageKey` | References a key in the user config `images` map. The correct platform (Windows/Linux) is selected automatically based on the current Docker mode. |
+| `volumes` | Project-specific volume mounts added alongside any image-level volumes from the user config. Mounted read-only by default; append `:rw` to make writable. |
 
 ### Local Overrides — `settings.local.json`
 
 Both the user config (`~/.dclaude/`) and project config (`.dclaude/`) directories support a `settings.local.json` file that overrides values from `settings.json`. Local files are never committed — they let you customize settings per-machine without affecting the shared configuration.
 
-When both files exist in the same directory, properties from `settings.local.json` are shallow-merged on top of `settings.json`. For example, to override the image key in a project:
+When both files exist in the same directory, properties from `settings.local.json` are shallow-merged on top of `settings.json`. For example, to override the project image on your local machine:
 
 **`.dclaude/settings.json`** (committed):
 ```json
 {
-  "imageKey": "pwsh"
+  "imageKey": "dotnet-core"
 }
 ```
 
 **`.dclaude/settings.local.json`** (git-ignored):
 ```json
 {
-  "imageKey": "dotnet",
+  "imageKey": "pwsh",
   "volumes": ["/extra/data:/workspace/data"]
 }
 ```
 
-The effective config would use `dotnet` as the image key and add the extra volume mount. The `settings.local.json` file is excluded via both the repo `.gitignore` and the global gitignore.
+The effective config would use the `pwsh` image key and add the extra volume mount. The `settings.local.json` file is excluded via both the repo `.gitignore` and the global gitignore.
 
 When `dclaude` runs with no parameters, image resolution follows this priority order:
 
@@ -140,22 +159,84 @@ When `dclaude` runs with no parameters, image resolution follows this priority o
 3. `image` field in project config
 4. `imageKey` field in project config (resolved through user config)
 
-## Building Images
+## Managing Images
 
-The repository includes Dockerfiles for Windows Server Core images. Use `scripts/Build-Image.ps1` to build them locally.
+Use `Add-DClaudeImage`, `Get-DClaudeImage`, and `Remove-DClaudeImage` to manage image entries without editing JSON files directly.
 
 ```powershell
-# PowerShell (Windows Server Core 2022 + PowerShell LTS)
+# Add a Windows image
+Add-DClaudeImage -Name dotnet-core -Tag dclaude-dotnet-core:latest -Platform Windows
+
+# Add a Linux variant for the same image
+Add-DClaudeImage -Name dotnet-core -Tag dclaude-dotnet-core-linux:latest -Platform Linux
+
+# Add with volume mounts
+Add-DClaudeImage -Name dotnet-core -Tag dclaude-dotnet-core:latest -Platform Windows -Volumes '%USERPROFILE%\.nuget:C:/Users/ContainerUser/.nuget'
+
+# List all images
+Get-DClaudeImage
+
+# List a specific image
+Get-DClaudeImage -Name dotnet-core
+
+# Remove a specific platform
+Remove-DClaudeImage -Name dotnet-core -Platform Linux
+
+# Remove an entire image entry (all platforms)
+Remove-DClaudeImage -Name dotnet-core
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `-Name` | `string` | Image entry name (key in the `images` map). Required for Add and Remove; optional for Get. |
+| `-Tag` | `string` | Docker image tag. Required for Add. |
+| `-Volumes` | `string[]` | Volume mounts in `host:container` format. Optional for Add. |
+| `-Platform` | `Windows\|Linux` | Target platform for the image entry. Required for Add; optional for Remove (omit to remove all platforms). |
+| `-Force` | `switch` | Overwrite an existing platform entry without removing it first. Only for Add. |
+
+These commands manage the global image registry at `~/.dclaude/settings.json`.
+
+## Managing Project Config
+
+Use `Set-DClaudeProject` and `Get-DClaudeProject` to manage the project config (`.dclaude/settings.json`) without editing JSON directly.
+
+```powershell
+# Set project to use a registered image key
+Set-DClaudeProject -ImageKey pwsh
+
+# Or set a direct image tag with volumes
+Set-DClaudeProject -Image my-custom:latest -Volumes './data:/workspace/data'
+
+# View current project config
+Get-DClaudeProject
+
+# Set project config in a different directory
+Set-DClaudeProject -ImageKey dotnet-core -Path ~/repos/other-project
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `-ImageKey` | `string` | References a key in the global image registry. Mutually exclusive with `-Image`. |
+| `-Image` | `string` | Direct Docker image tag. Mutually exclusive with `-ImageKey`. |
+| `-Volumes` | `string[]` | Project-specific volume mounts in `host:container` format. Optional. |
+| `-Path` | `string` | Target project directory. Defaults to the current directory. |
+
+## Building Images
+
+The repository includes Dockerfiles for building images. Use `scripts/Build-Image.ps1` to build them locally. The script auto-detects whether Docker is in Windows or Linux container mode and builds the matching image.
+
+```powershell
+# PowerShell — builds Windows or Linux variant depending on Docker mode
 ./scripts/Build-Image.ps1 -Name pwsh
 
-# .NET SDK 8 (Windows Server Core 2022)
+# .NET SDK — builds Windows (SDK 8.0) or Linux (SDK 10.0) variant
 ./scripts/Build-Image.ps1 -Name dotnet-core
 
-# .NET Framework SDK 4.8.1 (Windows Server Core 2022)
+# .NET Framework SDK 4.8.1 (Windows only)
 ./scripts/Build-Image.ps1 -Name dotnet-framework
 ```
 
-All images are built from `Images/Dockerfile`, which:
+Windows images are built from `Images/Dockerfile` and Linux images from `Images/Dockerfile.linux`. Linux images run as a non-root `claude` user (required by Claude Code). The Windows Dockerfile:
 
 - Accepts a `BASE_IMAGE` build argument pointing to any Windows container base
 - Installs Git for Windows (required by Claude Code)
@@ -163,7 +244,7 @@ All images are built from `Images/Dockerfile`, which:
 - Sets the entrypoint to `claude --dangerously-skip-permissions`
 - Trusts the workspace directory as a safe Git directory
 
-These Windows images are provided as a convenience. Any Docker image with Claude Code installed works with dclaude — the module auto-detects the container OS and sets paths accordingly.
+These images are provided as a convenience. Any Docker image with Claude Code installed works with dclaude — the module auto-detects the container OS and sets paths accordingly.
 
 To build a custom image from a different base, pass `--build-arg` directly to Docker:
 
@@ -175,9 +256,9 @@ docker build --build-arg "BASE_IMAGE=my-base:latest" -t my-custom:latest -f Imag
 
 Every container run by `dclaude` receives these mounts automatically:
 
-| Host path | Container path (Windows) | Container path (Linux) | Purpose |
-|---|---|---|---|
-| `$Path` (working dir) | `C:/workspace` | `/workspace` | Project files |
-| `~/.claude` | `C:/Users/ContainerUser/.claude` | `/root/.claude` | Claude settings and history |
+| Host path | Container path (Windows) | Container path (Linux) | Mode | Purpose |
+|---|---|---|---|---|
+| `$Path` (working dir) | `C:/workspace` | `/workspace` | read-write | Project files |
+| `~/.claude` | `C:/Users/ContainerUser/.claude` | `/home/claude/.claude` | read-only | Claude settings and history |
 
-Additional volume mounts come from the image entry in user config (`images.<key>.volumes`) and the project config (`volumes`), in that order. The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; container paths are set accordingly.
+Additional volume mounts are layered from two sources: image-level volumes defined in the matching platform block of the user config, and project-level volumes from the `volumes` array in the project config. Both sets are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.

@@ -1,0 +1,45 @@
+ARG BASE_IMAGE=ubuntu:latest
+FROM ${BASE_IMAGE}
+
+# Install prerequisites (curl, git) if missing
+RUN if command -v apt-get > /dev/null; then \
+        apt-get update && apt-get install -y --no-install-recommends curl git ca-certificates && rm -rf /var/lib/apt/lists/*; \
+    elif command -v tdnf > /dev/null; then \
+        tdnf install -y curl git ca-certificates && tdnf clean all; \
+    elif command -v apk > /dev/null; then \
+        apk add --no-cache curl git ca-certificates; \
+    else \
+        echo "ERROR: No supported package manager found (apt-get, tdnf, apk)" && exit 1; \
+    fi
+
+# Install Node.js 22 LTS
+ARG NODE_VERSION=22.14.0
+RUN ARCH=$(uname -m) && \
+    case "$ARCH" in \
+        x86_64)  NODE_ARCH="x64" ;; \
+        aarch64) NODE_ARCH="arm64" ;; \
+        armv7l)  NODE_ARCH="armv7l" ;; \
+        *)       echo "Unsupported architecture: $ARCH" && exit 1 ;; \
+    esac && \
+    curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz \
+        | tar -xz --strip-components=1 -C /usr/local
+
+# Install Claude Code globally
+RUN npm install -g @anthropic-ai/claude-code
+
+# Create non-root user (Claude Code refuses --dangerously-skip-permissions as root)
+RUN useradd -m claude
+
+# Entrypoint script copies host Claude config to writable home directory
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+USER claude
+ENV HOME=/home/claude
+
+# Trust mounted workspace to avoid "dubious ownership" errors
+RUN git config --global --add safe.directory /workspace
+
+WORKDIR /workspace
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

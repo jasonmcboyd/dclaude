@@ -24,7 +24,14 @@
     PowerShellVersion = '5.1'
 
     # Functions to export from this module
-    FunctionsToExport = @('Invoke-DClaude')
+    FunctionsToExport = @(
+        'Add-DClaudeImage'
+        'Get-DClaudeImage'
+        'Get-DClaudeProject'
+        'Invoke-DClaude'
+        'Remove-DClaudeImage'
+        'Set-DClaudeProject'
+    )
 
     # Cmdlets to export from this module
     CmdletsToExport   = @()
@@ -42,10 +49,10 @@
             Tags       = @('Docker', 'Claude', 'AI', 'Development', 'Container')
 
             # URI for the license of this module
-            LicenseUri = 'https://github.com/jasonboyd/dclaude/blob/main/LICENSE'
+            LicenseUri = 'https://github.com/jasonmcboyd/dclaude/blob/main/LICENSE'
 
             # URI for the project site of this module
-            ProjectUri = 'https://github.com/jasonboyd/dclaude'
+            ProjectUri = 'https://github.com/jasonmcboyd/dclaude'
         }
     }
 }

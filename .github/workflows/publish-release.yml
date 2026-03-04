@@ -8,14 +8,20 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Create Module Manifest
         shell: pwsh
-        run: ./scripts/create-module-manifest.ps1 -Version "${{ github.ref_name }}"
+        env:
+          MODULE_VERSION: ${{ github.ref_name }}
+        run: ./scripts/create-module-manifest.ps1 -Version $env:MODULE_VERSION
 
       - name: Publish To PowerShell Gallery
         shell: pwsh
-        run: Publish-Module -Path ./publish/dclaude -Repository PSGallery -NuGetApiKey ${{ secrets.POWERSHELL_GALLERY_API_KEY }}
+        env:
+          NUGET_API_KEY: ${{ secrets.POWERSHELL_GALLERY_API_KEY }}
+        run: Publish-Module -Path ./publish/dclaude -Repository PSGallery -NuGetApiKey $env:NUGET_API_KEY

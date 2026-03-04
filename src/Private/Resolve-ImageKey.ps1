@@ -2,7 +2,10 @@ function Resolve-ImageKey {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$Key
+        [string]$Key,
+
+        [Parameter(Mandatory)]
+        [string]$ContainerOS
     )
 
     $userConfig = Get-DClaudeUserConfig
@@ -17,18 +20,22 @@ function Resolve-ImageKey {
 
     $entry = $userConfig.images.$Key
 
-    if ($entry -is [string]) {
-        throw "Image key '$Key' in ~/.dclaude/settings.json must be an object with at least a 'tag' property, not a bare string. Example: { `"$Key`": { `"tag`": `"$entry`" } }"
+    $platformKey = $ContainerOS.ToLower()
+    if (-not $entry.PSObject.Properties[$platformKey]) {
+        $available = ($entry.PSObject.Properties | ForEach-Object { $_.Name }) -join ', '
+        throw "Image key '$Key' has no '$platformKey' platform entry in ~/.dclaude/settings.json. Available platforms: $available"
     }
 
-    if (-not $entry.tag) {
-        throw "Image key '$Key' in ~/.dclaude/settings.json is missing the required 'tag' property."
+    $platformEntry = $entry.$platformKey
+
+    if (-not $platformEntry.tag) {
+        throw "Image key '$Key' platform '$platformKey' in ~/.dclaude/settings.json is missing the required 'tag' property."
     }
 
-    $volumes = if ($entry.volumes) { @($entry.volumes) } else { @() }
+    $volumes = if ($platformEntry.volumes) { @($platformEntry.volumes) } else { @() }
 
     return [PSCustomObject]@{
-        tag     = $entry.tag
+        tag     = $platformEntry.tag
         volumes = $volumes
     }
 }

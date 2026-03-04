@@ -31,7 +31,14 @@ $manifestParams = @{
     Copyright         = '(c) Jason Boyd. All rights reserved.'
     Description       = 'Launch Docker containers with Claude Code pre-installed for isolated development environments.'
     PowerShellVersion = '5.1'
-    FunctionsToExport = @('Invoke-DClaude')
+    FunctionsToExport = @(
+        'Add-DClaudeImage'
+        'Get-DClaudeImage'
+        'Get-DClaudeProject'
+        'Invoke-DClaude'
+        'Remove-DClaudeImage'
+        'Set-DClaudeProject'
+    )
     CmdletsToExport   = @()
     VariablesToExport = @()
     AliasesToExport   = @('dclaude')
