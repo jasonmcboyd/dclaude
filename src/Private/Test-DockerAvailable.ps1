@@ -14,8 +14,13 @@ function Test-DockerAvailable {
     }
 
     # Check that Docker is in Windows container mode
-    $osType = ($dockerInfo | Select-String -Pattern '^\s*OSType:\s*(.+)$').Matches |
-        ForEach-Object { $_.Groups[1].Value.Trim() }
+    $osTypeMatch = $dockerInfo | Select-String -Pattern '^\s*OSType:\s*(.+)$'
+
+    if (-not $osTypeMatch) {
+        throw "Unable to determine Docker OS type from 'docker info' output. Ensure Docker is running correctly."
+    }
+
+    $osType = $osTypeMatch.Matches | ForEach-Object { $_.Groups[1].Value.Trim() }
 
     if ($osType -ne 'windows') {
         throw "Docker is in Linux container mode. Switch to Windows containers: right-click Docker Desktop tray icon > 'Switch to Windows containers...'"

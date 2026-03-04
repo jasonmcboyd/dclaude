@@ -6,7 +6,12 @@ function Get-DClaudeUserConfig {
 
     if (Test-Path $configPath) {
         $content = Get-Content -Path $configPath -Raw
-        return $content | ConvertFrom-Json
+        try {
+            return $content | ConvertFrom-Json
+        }
+        catch {
+            throw "Failed to parse user config file '$configPath': $_"
+        }
     }
 
     return $null
