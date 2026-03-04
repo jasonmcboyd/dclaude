@@ -21,6 +21,9 @@ Desktop.ini
 # Claude Code
 .claude/
 
+# Local (untracked) images
+LocalImages/
+
 # Temp
 *.tmp
 *.log

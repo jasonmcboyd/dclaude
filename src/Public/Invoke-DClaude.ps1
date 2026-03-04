@@ -1,8 +1,11 @@
 function Invoke-DClaude {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName = 'Default')]
     param(
-        [Parameter()]
+        [Parameter(ParameterSetName = 'ByImage', Mandatory)]
         [string]$Image,
+
+        [Parameter(ParameterSetName = 'ByImageKey', Mandatory)]
+        [string]$ImageKey,
 
         [Parameter()]
         [string]$Path = $PWD,
@@ -23,20 +26,30 @@ function Invoke-DClaude {
     }
     $resolvedPath = (Resolve-Path -Path $Path).Path
 
-    # Determine image
+    # Load project config
+    $config = Get-DClaudeConfig -Path $resolvedPath
+
+    # Determine image tag
     $imageTag = $null
-    if ($Image) {
-        $imageTag = $Image
-    }
-    else {
-        $config = Get-DClaudeConfig -Path $resolvedPath
-        if ($config -and $config.image) {
-            $imageTag = $config.image
+    switch ($PSCmdlet.ParameterSetName) {
+        'ByImage' {
+            $imageTag = $Image
+        }
+        'ByImageKey' {
+            $imageTag = Resolve-ImageKey $ImageKey
+        }
+        'Default' {
+            if ($config -and $config.image) {
+                $imageTag = $config.image
+            }
+            elseif ($config -and $config.imageKey) {
+                $imageTag = Resolve-ImageKey $config.imageKey
+            }
         }
     }
 
     if (-not $imageTag) {
-        throw "No image specified. Either pass -Image or create .dclaude/dclaude.json with:`n{`n  `"image`": `"dclaude-dotnet-framework-4.8`"`n}"
+        throw "No image specified. Pass -Image, -ImageKey, or create .dclaude/dclaude.json with an 'image' or 'imageKey' property."
     }
 
     # Build docker run arguments
@@ -53,6 +66,21 @@ function Invoke-DClaude {
     }
     else {
         Write-Warning "Claude config path '$ClaudeConfigPath' not found. Container will start without Claude configuration."
+    }
+
+    # Mount volumes from user config and project config (layered)
+    $userConfig = Get-DClaudeUserConfig
+    $allVolumes = @()
+    if ($userConfig -and $userConfig.volumes) {
+        $allVolumes += $userConfig.volumes
+    }
+    if ($config -and $config.volumes) {
+        $allVolumes += $config.volumes
+    }
+    foreach ($vol in $allVolumes) {
+        $expanded = [Environment]::ExpandEnvironmentVariables($vol)
+        $dockerArgs += '-v'
+        $dockerArgs += $expanded
     }
 
     # Pass API key if set
