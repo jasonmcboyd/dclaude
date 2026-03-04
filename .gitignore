@@ -24,6 +24,9 @@ Desktop.ini
 # Local (untracked) images
 LocalImages/
 
+# Local settings overrides
+settings.local.json
+
 # Temp
 *.tmp
 *.log

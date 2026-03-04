@@ -5,17 +5,6 @@ function Get-DClaudeConfig {
         [string]$Path = $PWD
     )
 
-    $configPath = Join-Path (Join-Path $Path '.dclaude') 'dclaude.json'
-
-    if (Test-Path $configPath) {
-        $content = Get-Content -Path $configPath -Raw
-        try {
-            return $content | ConvertFrom-Json
-        }
-        catch {
-            throw "Failed to parse config file '$configPath': $_"
-        }
-    }
-
-    return $null
+    $configDir = Join-Path $Path '.dclaude'
+    return Merge-SettingsFiles -Directory $configDir -Label 'project config'
 }

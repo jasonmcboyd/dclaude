@@ -29,27 +29,32 @@ function Invoke-DClaude {
     # Load project config
     $config = Get-DClaudeConfig -Path $resolvedPath
 
-    # Determine image tag
+    # Determine image tag and image-level volumes
     $imageTag = $null
+    $imageVolumes = @()
     switch ($PSCmdlet.ParameterSetName) {
         'ByImage' {
             $imageTag = $Image
         }
         'ByImageKey' {
-            $imageTag = Resolve-ImageKey $ImageKey
+            $resolved = Resolve-ImageKey $ImageKey
+            $imageTag = $resolved.tag
+            $imageVolumes = $resolved.volumes
         }
         'Default' {
             if ($config -and $config.image) {
                 $imageTag = $config.image
             }
             elseif ($config -and $config.imageKey) {
-                $imageTag = Resolve-ImageKey $config.imageKey
+                $resolved = Resolve-ImageKey $config.imageKey
+                $imageTag = $resolved.tag
+                $imageVolumes = $resolved.volumes
             }
         }
     }
 
     if (-not $imageTag) {
-        throw "No image specified. Pass -Image, -ImageKey, or create .dclaude/dclaude.json with an 'image' or 'imageKey' property."
+        throw "No image specified. Pass -Image, -ImageKey, or create .dclaude/settings.json with an 'image' or 'imageKey' property."
     }
 
     # Build docker run arguments
@@ -68,14 +73,13 @@ function Invoke-DClaude {
         Write-Warning "Claude config path '$ClaudeConfigPath' not found. Container will start without Claude configuration."
     }
 
-    # Mount volumes from user config and project config (layered)
-    $userConfig = Get-DClaudeUserConfig
+    # Mount volumes from image config and project config (layered)
     $allVolumes = @()
-    if ($userConfig -and $userConfig.volumes) {
-        $allVolumes += $userConfig.volumes
+    if ($imageVolumes.Count -gt 0) {
+        $allVolumes += $imageVolumes
     }
     if ($config -and $config.volumes) {
-        $allVolumes += $config.volumes
+        $allVolumes += @($config.volumes)
     }
     foreach ($vol in $allVolumes) {
         $expanded = [Environment]::ExpandEnvironmentVariables($vol)
