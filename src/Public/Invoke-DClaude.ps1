@@ -17,8 +17,8 @@ function Invoke-DClaude {
         [string[]]$ClaudeArgs
     )
 
-    # Validate Docker environment
-    Test-DockerAvailable
+    # Validate Docker environment and detect container OS
+    $containerOS = Test-DockerAvailable
 
     # Resolve working directory to absolute path
     if (-not (Test-Path -Path $Path -PathType Container)) {
@@ -57,17 +57,27 @@ function Invoke-DClaude {
         throw "No image specified. Pass -Image, -ImageKey, or create .dclaude/settings.json with an 'image' or 'imageKey' property."
     }
 
+    # Set container paths based on OS type
+    if ($containerOS -eq 'windows') {
+        $containerWorkspace = 'C:/workspace'
+        $containerClaude = 'C:/Users/ContainerUser/.claude'
+    }
+    else {
+        $containerWorkspace = '/workspace'
+        $containerClaude = '/root/.claude'
+    }
+
     # Build docker run arguments
     $dockerArgs = @(
         'run', '-it', '--rm'
-        '-v', "${resolvedPath}:C:/workspace"
-        '-w', 'C:/workspace'
+        '-v', "${resolvedPath}:${containerWorkspace}"
+        '-w', $containerWorkspace
     )
 
     # Mount Claude config if it exists
     if (Test-Path $ClaudeConfigPath) {
         $dockerArgs += '-v'
-        $dockerArgs += "${ClaudeConfigPath}:C:/Users/ContainerUser/.claude"
+        $dockerArgs += "${ClaudeConfigPath}:${containerClaude}"
     }
     else {
         Write-Warning "Claude config path '$ClaudeConfigPath' not found. Container will start without Claude configuration."

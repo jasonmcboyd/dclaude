@@ -1,10 +1,10 @@
 # dclaude
 
-Run Claude Code inside Docker containers on Windows. Mounts your project, Claude config, API key, and configurable volumes into an isolated Windows container.
+Run Claude Code inside Docker containers. Mounts your project, Claude config, API key, and configurable volumes into an isolated container.
 
 ## Prerequisites
 
-- Windows with Docker Desktop configured for **Windows containers**
+- Docker (Windows, macOS, or Linux)
 - PowerShell 5.1 or later
 - `ANTHROPIC_API_KEY` set in your environment
 - Claude config at `~/.claude` (created by running `claude` once on the host)
@@ -34,7 +34,7 @@ Invoke-DClaude -Image dclaude-pwsh:latest
 dclaude -ImageKey pwsh
 
 # Run in a specific directory and pass arguments to Claude
-dclaude -ImageKey dotnet -Path C:\repos\myproject -- --resume
+dclaude -ImageKey dotnet -Path ~/repos/myproject -- --resume
 ```
 
 If the current directory contains a `.dclaude/settings.json` project config, you can invoke with no parameters and the image is resolved from that file:
@@ -64,16 +64,13 @@ Defines named images and their per-image volume mounts. Lives in your home direc
 ```json
 {
   "images": {
-    "pwsh": {
+    "pwsh-win": {
       "tag": "dclaude-pwsh:latest",
       "volumes": ["%USERPROFILE%\\.nuget:C:/Users/ContainerUser/.nuget"]
     },
-    "dotnet": {
-      "tag": "dclaude-dotnet-core:latest",
-      "volumes": [
-        "%USERPROFILE%\\.nuget:C:/Users/ContainerUser/.nuget",
-        "%USERPROFILE%\\.dotnet:C:/Users/ContainerUser/.dotnet"
-      ]
+    "node-linux": {
+      "tag": "my-node-claude:latest",
+      "volumes": ["$HOME/.npm:/root/.npm"]
     }
   }
 }
@@ -84,7 +81,7 @@ Each key under `images` is an image name you can pass to `-ImageKey`. The value 
 | Field | Required | Description |
 |---|---|---|
 | `tag` | Yes | Docker image tag to run. |
-| `volumes` | No | Array of volume mounts in `host:container` format. Environment variables (e.g., `%USERPROFILE%`) are expanded at runtime. |
+| `volumes` | No | Array of volume mounts in `host:container` format. Environment variables are expanded at runtime via .NET's `ExpandEnvironmentVariables`. Use `%VAR%` syntax — this works cross-platform. |
 
 ### Project Config — `.dclaude/settings.json`
 
@@ -101,9 +98,11 @@ Or with a direct image tag and project-specific volume mounts:
 ```json
 {
   "image": "my-custom:latest",
-  "volumes": ["./data:C:/workspace/data"]
+  "volumes": ["./data:/workspace/data"]
 }
 ```
+
+Container paths in volume mounts depend on the image's OS — use `C:/workspace/...` for Windows containers or `/workspace/...` for Linux containers.
 
 | Field | Description |
 |---|---|
@@ -128,7 +127,7 @@ When both files exist in the same directory, properties from `settings.local.jso
 ```json
 {
   "imageKey": "dotnet",
-  "volumes": ["C:/extra/data:C:/workspace/data"]
+  "volumes": ["/extra/data:/workspace/data"]
 }
 ```
 
@@ -143,7 +142,7 @@ When `dclaude` runs with no parameters, image resolution follows this priority o
 
 ## Building Images
 
-Pre-built Dockerfiles are provided for three bases. Use `scripts/Build-Image.ps1` to build them locally.
+The repository includes Dockerfiles for Windows Server Core images. Use `scripts/Build-Image.ps1` to build them locally.
 
 ```powershell
 # PowerShell (Windows Server Core 2022 + PowerShell LTS)
@@ -162,7 +161,9 @@ All images are built from `Images/Dockerfile`, which:
 - Installs Git for Windows (required by Claude Code)
 - Installs Node.js 22 LTS and `@anthropic-ai/claude-code` globally
 - Sets the entrypoint to `claude --dangerously-skip-permissions`
-- Trusts `C:/workspace` as a safe Git directory
+- Trusts the workspace directory as a safe Git directory
+
+These Windows images are provided as a convenience. Any Docker image with Claude Code installed works with dclaude — the module auto-detects the container OS and sets paths accordingly.
 
 To build a custom image from a different base, pass `--build-arg` directly to Docker:
 
@@ -174,9 +175,9 @@ docker build --build-arg "BASE_IMAGE=my-base:latest" -t my-custom:latest -f Imag
 
 Every container run by `dclaude` receives these mounts automatically:
 
-| Host path | Container path | Purpose |
-|---|---|---|
-| `$Path` (working dir) | `C:/workspace` | Project files |
-| `~/.claude` | `C:/Users/ContainerUser/.claude` | Claude settings and history |
+| Host path | Container path (Windows) | Container path (Linux) | Purpose |
+|---|---|---|---|
+| `$Path` (working dir) | `C:/workspace` | `/workspace` | Project files |
+| `~/.claude` | `C:/Users/ContainerUser/.claude` | `/root/.claude` | Claude settings and history |
 
-Additional volume mounts come from the image entry in user config (`images.<key>.volumes`) and the project config (`volumes`), in that order. The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host.
+Additional volume mounts come from the image entry in user config (`images.<key>.volumes`) and the project config (`volumes`), in that order. The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; container paths are set accordingly.
