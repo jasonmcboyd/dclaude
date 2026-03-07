@@ -17,11 +17,12 @@ if [ -d "$HOST_DIR" ]; then
     for dir in "$HOST_DIR"/*/; do
         name=$(basename "$dir")
         [ "$name" = "plugins" ] && continue
+        [ "$name" = "session-env" ] && continue
         ln -sfn "$dir" "$CLAUDE_HOME/$name"
     done
 
-    # Copy top-level files (small config files)
-    for file in "$HOST_DIR"/*; do
+    # Copy top-level files (small config files), including dotfiles
+    for file in "$HOST_DIR"/* "$HOST_DIR"/.*; do
         [ -f "$file" ] && cp "$file" "$CLAUDE_HOME/$(basename "$file")"
     done
 fi
