@@ -118,6 +118,10 @@ function Invoke-DClaude {
         $dockerArgs += 'ANTHROPIC_API_KEY'
     }
 
+    # Pass host path so the container can link conversation history for /resume
+    $dockerArgs += '-e'
+    $dockerArgs += "DCLAUDE_HOST_PATH=$resolvedPath"
+
     # Add image tag
     $dockerArgs += $imageTag
 
