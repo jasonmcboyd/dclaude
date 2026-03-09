@@ -21,8 +21,9 @@ Desktop.ini
 # Claude Code
 .claude/
 
-# Local (untracked) images
+# Local (untracked) images and scripts
 LocalImages/
+LocalScripts/
 
 # Local settings overrides
 settings.local.json

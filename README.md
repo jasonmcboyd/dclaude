@@ -9,6 +9,31 @@ Run Claude Code with `--dangerously-skip-permissions` inside Docker containers s
 - `ANTHROPIC_API_KEY` set in your environment
 - Claude config at `~/.claude` (created by running `claude` once on the host)
 
+### Windows Containers Setup
+
+Windows containers cannot bind-mount individual files, only directories. Claude Code stores `~/.claude.json` separately from the `~/.claude/` directory, so a one-time setup is required to move the file inside the directory and create a symlink at the original location.
+
+**1. Enable Developer Mode** (required for symlinks without elevation):
+
+- Settings > Privacy & Security > For developers > Developer Mode
+- Or from an elevated PowerShell:
+  ```powershell
+  reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /t REG_DWORD /f /v AllowDevelopmentWithoutDevLicense /d 1
+  ```
+- Verify: `Get-ItemPropertyValue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock' 'AllowDevelopmentWithoutDevLicense'` should return `1`
+
+**2. Run the initialization command:**
+
+```powershell
+Initialize-DClaudeWindowsContainers
+```
+
+This copies `~/.claude.json` into `~/.claude/.claude.json`, then replaces the original with a symlink pointing into the directory. Host Claude Code continues to work transparently through the symlink. The file is now carried into containers via the existing `~/.claude/` directory mount.
+
+This step is only required once. If you skip it, `dclaude` will display an error when running with Windows containers.
+
+> **Note:** This is not required for Linux containers, even on a Windows host. Linux containers on Docker Desktop for Windows can bind-mount individual files without issue.
+
 ## Installation
 
 **From PowerShell Gallery:**
@@ -262,3 +287,7 @@ Every container run by `dclaude` receives these mounts automatically:
 | `~/.claude` | `C:/Users/ContainerUser/.claude` | `/home/claude/.claude` | read-only | Claude settings and history |
 
 Additional volume mounts are layered from two sources: image-level volumes defined in the matching platform block of the user config, and project-level volumes from the `volumes` array in the project config. Both sets are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.
+
+## Private Files
+
+The `LocalImages/` and `LocalScripts/` directories are gitignored. Use them for private Dockerfiles, build scripts, or any other files you don't want committed to the repository.

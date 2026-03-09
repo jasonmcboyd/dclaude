@@ -28,6 +28,7 @@
         'Add-DClaudeImage'
         'Get-DClaudeImage'
         'Get-DClaudeProject'
+        'Initialize-DClaudeWindowsContainers'
         'Invoke-DClaude'
         'Remove-DClaudeImage'
         'Set-DClaudeProject'

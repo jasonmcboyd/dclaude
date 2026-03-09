@@ -63,7 +63,8 @@ function Invoke-DClaude {
     # Set container paths based on OS type
     if ($containerOS -eq 'windows') {
         $containerWorkspace = 'C:/workspace'
-        $containerClaude = 'C:/Users/ContainerUser/.claude'
+        # Windows containers run as ContainerAdministrator by default
+        $containerClaude = 'C:/Users/ContainerAdministrator/.claude'
     }
     else {
         $containerWorkspace = '/workspace'
@@ -87,10 +88,22 @@ function Invoke-DClaude {
     }
 
     # Mount .claude.json (lives in home dir, separate from .claude/ directory)
+    # Windows containers cannot bind-mount single files. On Windows, run
+    # Initialize-DClaudeWindowsContainers to symlink .claude.json into
+    # ~/.claude/ so it's carried by the directory mount above.
     $claudeJsonPath = Join-Path (Split-Path $ClaudeConfigPath) '.claude.json'
     if (Test-Path $claudeJsonPath) {
-        $dockerArgs += '-v'
-        $dockerArgs += "${claudeJsonPath}:/mnt/host-claude.json:ro"
+        if ($containerOS -eq 'windows') {
+            if (-not (Get-Item $claudeJsonPath).Target) {
+                Write-Error ".claude.json is not symlinked into '$ClaudeConfigPath'. Run Initialize-DClaudeWindowsContainers to fix this."
+                return
+            }
+        }
+        else {
+            $containerClaudeJson = '/mnt/host-claude.json'
+            $dockerArgs += '-v'
+            $dockerArgs += "${claudeJsonPath}:${containerClaudeJson}:ro"
+        }
     }
 
     # Mount volumes from image config and project config

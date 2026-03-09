@@ -15,7 +15,20 @@ function Set-DClaudeProject {
     )
 
     $directory = Join-Path $Path '.dclaude'
-    $config = Read-SettingsFile -Directory $directory
+    $localPath = Join-Path $directory 'settings.local.json'
+
+    $config = $null
+    if (Test-Path $localPath) {
+        $content = Get-Content -Path $localPath -Raw
+        if (-not [string]::IsNullOrWhiteSpace($content)) {
+            try {
+                $config = $content | ConvertFrom-Json
+            }
+            catch {
+                throw "Failed to parse settings file '$localPath': $_"
+            }
+        }
+    }
 
     if (-not $config) {
         $config = [PSCustomObject]@{}
@@ -47,7 +60,10 @@ function Set-DClaudeProject {
         }
     }
 
-    if ($PSCmdlet.ShouldProcess("Project config at '$directory'", 'Set')) {
-        Save-SettingsFile -Directory $directory -Config $config
+    if ($PSCmdlet.ShouldProcess("Project config at '$localPath'", 'Set')) {
+        if (-not (Test-Path $directory)) {
+            New-Item -Path $directory -ItemType Directory -Force | Out-Null
+        }
+        $config | ConvertTo-Json -Depth 10 | Set-Content -Path $localPath -Encoding UTF8
     }
 }

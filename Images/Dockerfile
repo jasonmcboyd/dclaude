@@ -24,6 +24,9 @@ RUN curl -sLo node.zip https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSI
 # Trust mounted workspace to avoid "dubious ownership" errors
 RUN git config --global --add safe.directory C:/workspace
 
+# Entrypoint script symlinks .claude.json from the mounted config directory
+COPY entrypoint.ps1 C:\entrypoint.ps1
+
 WORKDIR C:\workspace
 
-ENTRYPOINT ["C:\\nodejs\\claude.cmd", "--dangerously-skip-permissions"]
+ENTRYPOINT ["powershell", "-NoProfile", "-File", "C:\\entrypoint.ps1"]
