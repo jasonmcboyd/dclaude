@@ -10,7 +10,7 @@ function Add-DClaudeImage {
         [Parameter()]
         [string[]]$Volumes,
 
-        [Parameter(Mandatory)]
+        [Parameter()]
         [ValidateSet('Windows', 'Linux')]
         [string]$Platform,
 
@@ -32,6 +32,12 @@ function Add-DClaudeImage {
     # Create image entry if it doesn't exist
     if (-not $config.images.PSObject.Properties[$Name]) {
         $config.images | Add-Member -MemberType NoteProperty -Name $Name -Value ([PSCustomObject]@{})
+    }
+
+    if (-not $Platform) {
+        $osType = Test-DockerAvailable
+        $Platform = if ($osType -eq 'windows') { 'Windows' } else { 'Linux' }
+        Write-Verbose "Inferred platform '$Platform' from Docker"
     }
 
     $platformKey = $Platform.ToLower()
