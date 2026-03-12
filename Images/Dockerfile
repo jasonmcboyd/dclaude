@@ -21,6 +21,9 @@ RUN curl -sLo node.zip https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSI
     setx /M PATH "C:\nodejs;%PATH%" && `
     C:\nodejs\npm install -g @anthropic-ai/claude-code
 
+# Enable developer mode so symlinks can be created without elevation
+RUN reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense /t REG_DWORD /d 1 /f
+
 # Trust mounted workspace to avoid "dubious ownership" errors
 RUN git config --global --add safe.directory C:/workspace
 

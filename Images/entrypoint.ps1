@@ -1,21 +1,40 @@
+$hostDir = 'C:\mnt\host-claude'
 $claudeDir = "$env:USERPROFILE\.claude"
 $claudeJson = "$env:USERPROFILE\.claude.json"
-$claudeJsonInDir = "$claudeDir\.claude.json"
 
-# Copy .claude.json from the mounted .claude directory to the home directory,
-# sanitizing it for the container environment (same approach as entrypoint.sh).
+# Selectively link/copy from the host .claude directory.
+# Symlink large data dirs (zero-cost, writes persist to host).
+# Copy small config files (so we can sanitize without affecting host).
+if (Test-Path $hostDir) {
+    New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
+
+    # Symlink directories — writes go straight to host.
+    # Skip 'projects' — handled below to avoid duplicate session entries in /resume.
+    Get-ChildItem $hostDir -Directory | ForEach-Object {
+        if ($_.Name -eq 'projects') { return }
+        $target = "$claudeDir\$($_.Name)"
+        if (-not (Test-Path $target)) {
+            New-Item -ItemType SymbolicLink -Path $target -Target $_.FullName -Force | Out-Null
+        }
+    }
+
+    # Copy top-level files (small config files)
+    Get-ChildItem $hostDir -File | ForEach-Object {
+        Copy-Item $_.FullName "$claudeDir\$($_.Name)" -Force
+    }
+}
+
+# Sanitize .claude.json — strip Windows paths and pre-accept container workspace
+$claudeJsonInDir = "$claudeDir\.claude.json"
 if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
     $cfg = Get-Content $claudeJsonInDir -Raw | ConvertFrom-Json
 
-    # Remove host-specific Windows paths that don't apply in the container
     $cfg.PSObject.Properties.Remove('projects')
     $cfg.PSObject.Properties.Remove('githubRepoPaths')
 
-    # Prevent the marketplace extension install prompt
     $cfg | Add-Member -MemberType NoteProperty -Name 'officialMarketplaceAutoInstallAttempted' -Value $true -Force
     $cfg | Add-Member -MemberType NoteProperty -Name 'officialMarketplaceAutoInstalled' -Value $true -Force
 
-    # Pre-accept trust for the container workspace so Claude doesn't prompt every run
     $cfg | Add-Member -MemberType NoteProperty -Name 'projects' -Value ([PSCustomObject]@{
         'C:/workspace' = [PSCustomObject]@{
             allowedTools = @()
@@ -27,41 +46,22 @@ if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
 }
 
 # Link host conversation history so /resume finds conversations from the host.
-# Container workspace is C:/workspace → key "C--workspace". Windows containers
-# cannot create junctions inside bind mounts, so we copy host sessions into the
-# container key dir. New container sessions persist via the bind mount and are
-# merged back into the host project dir on subsequent runs.
+# Symlink the container's project key (C--workspace) to the host project dir
+# inside the bind mount. The symlink lives on the local filesystem (not inside
+# the bind mount), so reparse points work.
 $hostPath = $env:DCLAUDE_HOST_PATH
-$projectsDir = "$claudeDir\projects"
-if ($hostPath -and (Test-Path $projectsDir)) {
+$hostProjectsDir = "$hostDir\projects"
+if ($hostPath -and (Test-Path $hostProjectsDir)) {
     $hostKey = $hostPath -replace '[/\\:]', '-'
-    $hostProjectDir = "$projectsDir\$hostKey"
-    $containerKey = 'C--workspace'
-    $containerProjectDir = "$projectsDir\$containerKey"
+    $hostProjectDir = "$hostProjectsDir\$hostKey"
 
-    # Ensure the host project directory exists
     if (-not (Test-Path $hostProjectDir)) {
         New-Item -ItemType Directory -Path $hostProjectDir -Force | Out-Null
     }
 
-    # Merge any orphaned container sessions into the host project dir
-    if (Test-Path $containerProjectDir) {
-        Get-ChildItem $containerProjectDir -File | ForEach-Object {
-            if (-not (Test-Path "$hostProjectDir\$($_.Name)")) {
-                Move-Item $_.FullName $hostProjectDir
-            }
-        }
-    }
-    else {
-        New-Item -ItemType Directory -Path $containerProjectDir -Force | Out-Null
-    }
-
-    # Copy host sessions into the container key dir so /resume can find them
-    Get-ChildItem $hostProjectDir -File | ForEach-Object {
-        if (-not (Test-Path "$containerProjectDir\$($_.Name)")) {
-            Copy-Item $_.FullName $containerProjectDir
-        }
-    }
+    $containerProjectsDir = "$claudeDir\projects"
+    New-Item -ItemType Directory -Path $containerProjectsDir -Force | Out-Null
+    New-Item -ItemType SymbolicLink -Path "$containerProjectsDir\C--workspace" -Target $hostProjectDir -Force | Out-Null
 }
 
 & C:\nodejs\claude.cmd --dangerously-skip-permissions @args

@@ -63,8 +63,10 @@ function Invoke-DClaude {
     # Set container paths based on OS type
     if ($containerOS -eq 'windows') {
         $containerWorkspace = 'C:/workspace'
-        # Windows containers run as ContainerAdministrator by default
-        $containerClaude = 'C:/Users/ContainerAdministrator/.claude'
+        # Mount at a staging path, not directly at ~/.claude, so the entrypoint
+        # can create symlinks on the local filesystem pointing into the mount.
+        # (Windows containers cannot create reparse points inside bind mounts.)
+        $containerClaude = 'C:/mnt/host-claude'
     }
     else {
         $containerWorkspace = '/workspace'
@@ -125,10 +127,12 @@ function Invoke-DClaude {
         $dockerArgs += $expanded
     }
 
-    # Pass API key if set
-    if ($env:ANTHROPIC_API_KEY) {
-        $dockerArgs += '-e'
-        $dockerArgs += 'ANTHROPIC_API_KEY'
+    # Pass through Claude Code environment variables (API keys, Vertex/Bedrock config, etc.)
+    foreach ($key in [Environment]::GetEnvironmentVariables().Keys) {
+        if ($key -match '^(ANTHROPIC_|CLAUDE_CODE_|CLOUD_ML_)') {
+            $dockerArgs += '-e'
+            $dockerArgs += $key
+        }
     }
 
     # Pass host path so the container can link conversation history for /resume
