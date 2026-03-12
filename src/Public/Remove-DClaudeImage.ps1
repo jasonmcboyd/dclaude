@@ -13,17 +13,20 @@ function Remove-DClaudeImage {
     $config = Read-SettingsFile -Directory $directory
 
     if (-not $config -or -not $config.PSObject.Properties['images'] -or -not $config.images) {
-        throw "Image '$Name' not found in user config."
+        Write-Error "Image '$Name' not found in user config."
+        return
     }
 
     if (-not $config.images.PSObject.Properties[$Name]) {
-        throw "Image '$Name' not found in user config."
+        Write-Error "Image '$Name' not found in user config."
+        return
     }
 
     if ($Platform) {
         $platformKey = $Platform.ToLower()
         if (-not $config.images.$Name.PSObject.Properties[$platformKey]) {
-            throw "Image '$Name' does not have a '$platformKey' platform entry in user config."
+            Write-Error "Image '$Name' does not have a '$platformKey' platform entry in user config."
+            return
         }
         $target = "Image '$Name' ($platformKey)"
     }
