@@ -36,6 +36,7 @@ function Add-DClaudeImage {
 
     if (-not $Platform) {
         $osType = Test-DockerAvailable
+        if (-not $osType) { return }
         $Platform = if ($osType -eq 'windows') { 'Windows' } else { 'Linux' }
         Write-Verbose "Inferred platform '$Platform' from Docker"
     }
@@ -44,7 +45,8 @@ function Add-DClaudeImage {
 
     # Check if platform already exists for this entry
     if ($config.images.$Name.PSObject.Properties[$platformKey] -and -not $Force) {
-        throw "Image '$Name' already has a '$platformKey' platform entry. Use -Force to overwrite or Remove-DClaudeImage to remove it first."
+        Write-Error "Image '$Name' already has a '$platformKey' platform entry. Use -Force to overwrite or Remove-DClaudeImage to remove it first."
+        return
     }
 
     $platformEntry = [PSCustomObject]@{ tag = $Tag }

@@ -19,13 +19,16 @@ function Invoke-DClaude {
 
     # Validate Docker environment and detect container OS
     $containerOS = Test-DockerAvailable
+    if (-not $containerOS) { return }
     if ($containerOS -notin @('windows', 'linux')) {
-        throw "Unsupported Docker OS type '$containerOS'. Only 'windows' and 'linux' are supported."
+        Write-Error "Unsupported Docker OS type '$containerOS'. Only 'windows' and 'linux' are supported."
+        return
     }
 
     # Resolve working directory to absolute path
     if (-not (Test-Path -Path $Path -PathType Container)) {
-        throw "Path '$Path' does not exist or is not a directory."
+        Write-Error "Path '$Path' does not exist or is not a directory."
+        return
     }
     $resolvedPath = (Resolve-Path -Path $Path).Path
 
@@ -57,7 +60,8 @@ function Invoke-DClaude {
     }
 
     if (-not $imageTag) {
-        throw "No image specified. Pass -Image, -ImageKey, or set 'image' or 'imageKey' in your project .dclaude/settings.json."
+        Write-Error "No image specified. Pass -Image, -ImageKey, or set 'image' or 'imageKey' in your project .dclaude/settings.json."
+        return
     }
 
     # Set container paths based on OS type
