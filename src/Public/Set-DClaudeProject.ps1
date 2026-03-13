@@ -2,6 +2,7 @@ function Set-DClaudeProject {
     [CmdletBinding(DefaultParameterSetName = 'ByImageKey', SupportsShouldProcess)]
     param(
         [Parameter(ParameterSetName = 'ByImageKey', Mandatory)]
+        [ValidateSet([DClaudeImageKeyCompleter])]
         [string]$ImageKey,
 
         [Parameter(ParameterSetName = 'ByImage', Mandatory)]
