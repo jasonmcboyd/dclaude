@@ -131,6 +131,18 @@ function Invoke-DClaude {
         $dockerArgs += $expanded
     }
 
+    # Pass additional volume descriptions so the container context file can list them.
+    # Apply the same :ro default so modes in the context file match what docker uses.
+    if ($allVolumes.Count -gt 0) {
+        $expandedVols = $allVolumes | ForEach-Object {
+            $v = [Environment]::ExpandEnvironmentVariables($_)
+            if ($v -notmatch ':(ro|rw)$') { $v = "${v}:ro" }
+            $v
+        }
+        $dockerArgs += '-e'
+        $dockerArgs += "DCLAUDE_VOLUMES=$($expandedVols -join '|')"
+    }
+
     # Pass through Claude Code environment variables (API keys, Vertex/Bedrock config, etc.)
     foreach ($key in [Environment]::GetEnvironmentVariables().Keys) {
         if ($key -match '^(ANTHROPIC_|CLAUDE_CODE_|CLOUD_ML_)') {

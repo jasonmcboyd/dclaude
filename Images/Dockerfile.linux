@@ -37,6 +37,7 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 USER claude
 ENV HOME=/home/claude
 ENV TERM=xterm-256color
+ENV DCLAUDE_CONTAINER=1
 
 # Trust mounted workspace to avoid "dubious ownership" errors
 RUN git config --global --add safe.directory /workspace

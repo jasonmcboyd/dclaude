@@ -30,6 +30,8 @@ RUN git config --global --add safe.directory C:/workspace
 # Entrypoint script symlinks .claude.json from the mounted config directory
 COPY entrypoint.ps1 C:\entrypoint.ps1
 
+ENV DCLAUDE_CONTAINER=1
+
 WORKDIR C:\workspace
 
 ENTRYPOINT ["powershell", "-NoProfile", "-File", "C:\\entrypoint.ps1"]
