@@ -5,8 +5,7 @@ function Get-DClaudeProject {
         [string]$Path = $PWD
     )
 
-    $directory = Join-Path $Path '.dclaude'
-    $config = Merge-SettingsFiles -Directory $directory -Label 'project config'
+    $config = Get-DClaudeConfig -Path $Path
 
     if (-not $config) {
         return
