@@ -1,7 +1,10 @@
 param(
-    [Parameter(Mandatory)]
+    [Parameter(Mandatory, ParameterSetName = 'ByName')]
     [ValidateSet('pwsh', 'dotnet-core', 'dotnet-framework')]
-    [string]$Name
+    [string]$Name,
+
+    [Parameter(Mandatory, ParameterSetName = 'All')]
+    [switch]$All
 )
 
 # Detect Docker's current container OS mode
@@ -46,15 +49,26 @@ $imageMap = @{
     }
 }
 
-if (-not $imageMap[$Name].ContainsKey($Platform)) {
-    $available = $imageMap[$Name].Keys -join ', '
-    throw "'$Name' is not available for $Platform. Available platforms: $available"
+$names = if ($All) {
+    $imageMap.Keys | Where-Object { $imageMap[$_].ContainsKey($Platform) }
+}
+else {
+    if (-not $imageMap[$Name].ContainsKey($Platform)) {
+        $available = $imageMap[$Name].Keys -join ', '
+        throw "'$Name' is not available for $Platform. Available platforms: $available"
+    }
+    @($Name)
 }
 
-$image = $imageMap[$Name][$Platform]
 $dockerfile = if ($Platform -eq 'Linux') { 'Dockerfile.linux' } else { 'Dockerfile' }
 $imagesDir = Join-Path $PSScriptRoot '..\Images'
 $dockerfilePath = Join-Path $imagesDir $dockerfile
 
-Write-Host "Building $($image.Tag) from $($image.BaseImage) ($Platform)..."
-docker build --build-arg "BASE_IMAGE=$($image.BaseImage)" -t $image.Tag -f $dockerfilePath $imagesDir
+foreach ($n in $names) {
+    $image = $imageMap[$n][$Platform]
+    Write-Host "Building $($image.Tag) from $($image.BaseImage) ($Platform)..."
+    docker build --build-arg "BASE_IMAGE=$($image.BaseImage)" -t $image.Tag -f $dockerfilePath $imagesDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to build '$n' ($Platform)."
+    }
+}
