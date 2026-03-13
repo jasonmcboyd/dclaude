@@ -20,13 +20,7 @@ if (Test-Path $hostDir) {
     }
 
     # Symlink top-level files so writes (e.g. OAuth token refresh) persist to host.
-    # Exception: .claude.json is copied (not symlinked) so we can sanitize it
-    # without modifying the host file.
     Get-ChildItem $hostDir -File | ForEach-Object {
-        if ($_.Name -eq '.claude.json') {
-            Copy-Item $_.FullName "$claudeDir\$($_.Name)" -Force
-            return
-        }
         $target = "$claudeDir\$($_.Name)"
         New-Item -ItemType SymbolicLink -Path $target -Target $_.FullName -Force | Out-Null
     }
