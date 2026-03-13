@@ -1,22 +1,3 @@
-class DClaudeImageKeyCompleter : System.Management.Automation.IValidateSetValuesGenerator {
-    [string[]] GetValidValues() {
-        $images = Get-DClaudeImage
-        if (-not $images) { return @() }
-
-        try {
-            $platform = (Test-DockerAvailable).ToLower()
-            $filtered = @($images | Where-Object { $_.Platform -eq $platform } |
-                Select-Object -ExpandProperty Name -Unique)
-            if ($filtered.Count -gt 0) { return $filtered }
-        }
-        catch {
-            # Docker not available — fall back to all image names
-        }
-
-        return @($images | Select-Object -ExpandProperty Name -Unique)
-    }
-}
-
 # Dot-source all private functions
 $privatePath = Join-Path $PSScriptRoot 'Private'
 if (Test-Path $privatePath) {
@@ -43,3 +24,25 @@ if (Test-Path $publicPath) {
 # Register aliases
 New-Alias -Name 'dclaude' -Value 'Invoke-DClaude' -Force
 Export-ModuleMember -Alias 'dclaude'
+
+# Register argument completers
+Register-ArgumentCompleter -CommandName 'Set-DClaudeProject' -ParameterName 'ImageKey' -ScriptBlock {
+    param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
+
+    $images = Get-DClaudeImage
+    if (-not $images) { return }
+
+    try {
+        $platform = (Test-DockerAvailable).ToLower()
+        $images = @($images | Where-Object { $_.Platform -eq $platform })
+    }
+    catch {
+        # Docker not available — complete with all image names
+    }
+
+    $images | Select-Object -ExpandProperty Name -Unique |
+        Where-Object { $_ -like "$wordToComplete*" } |
+        ForEach-Object {
+            [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+        }
+}
