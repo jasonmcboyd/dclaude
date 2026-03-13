@@ -1,3 +1,25 @@
+<#
+.SYNOPSIS
+    Lists Docker images registered in the dclaude user configuration.
+
+.DESCRIPTION
+    Returns image entries from ~/.dclaude/settings.json (merged with
+    settings.local.json). Each entry is expanded to one row per platform,
+    showing the image name, platform, tag, and volumes.
+
+.PARAMETER Name
+    Filter by image name. If omitted, all images are returned.
+
+.EXAMPLE
+    Get-DClaudeImage
+
+    Lists all registered images across all platforms.
+
+.EXAMPLE
+    Get-DClaudeImage -Name 'pwsh'
+
+    Shows platform entries for the 'pwsh' image only.
+#>
 function Get-DClaudeImage {
     [CmdletBinding()]
     param(

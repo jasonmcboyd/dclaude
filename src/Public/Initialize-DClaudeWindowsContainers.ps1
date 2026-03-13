@@ -1,3 +1,22 @@
+<#
+.SYNOPSIS
+    One-time setup to enable .claude.json persistence in Windows containers.
+
+.DESCRIPTION
+    Windows containers cannot bind-mount individual files, only directories.
+    This command moves ~/.claude.json into the ~/.claude/ directory and replaces
+    the original with a symbolic link. This allows the file to travel through
+    the directory mount into the container while remaining transparent to the
+    host Claude Code installation. Only needs to be run once per system.
+
+.PARAMETER ClaudeConfigPath
+    Path to the Claude configuration directory. Defaults to ~/.claude.
+
+.EXAMPLE
+    Initialize-DClaudeWindowsContainers
+
+    Sets up the .claude.json symlink using the default Claude config path.
+#>
 function Initialize-DClaudeWindowsContainers {
     [CmdletBinding()]
     param(

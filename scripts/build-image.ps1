@@ -7,16 +7,12 @@ param(
     [switch]$All
 )
 
-# Detect Docker's current container OS mode
-$dockerInfo = docker info 2>&1
-if ($LASTEXITCODE -ne 0) {
-    throw 'Docker is not running. Start Docker Desktop and try again.'
+# Detect Docker's current container OS mode (reuse module helper)
+. (Join-Path $PSScriptRoot '..\src\Private\Test-DockerAvailable.ps1')
+$osType = Test-DockerAvailable
+if (-not $osType) {
+    throw 'Docker is not available. See error above.'
 }
-$osTypeMatch = $dockerInfo | Select-String -Pattern '^\s*OSType:\s*(.+)$'
-if (-not $osTypeMatch) {
-    throw "Unable to determine Docker OS type from 'docker info' output."
-}
-$osType = ($osTypeMatch.Matches | ForEach-Object { $_.Groups[1].Value.Trim() })
 $Platform = if ($osType -eq 'windows') { 'Windows' } else { 'Linux' }
 Write-Host "Detected Docker mode: $Platform"
 

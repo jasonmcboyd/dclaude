@@ -1,3 +1,46 @@
+<#
+.SYNOPSIS
+    Runs Claude Code inside a Docker container.
+
+.DESCRIPTION
+    Launches an interactive Docker container with Claude Code, mounting the
+    specified working directory and Claude configuration. The container provides
+    a security boundary so Claude Code can run with --dangerously-skip-permissions
+    without risk to the host system.
+
+    The image to use is resolved in priority order: -Image parameter, -ImageKey
+    parameter, project config image, project config imageKey.
+
+.PARAMETER Image
+    Docker image tag to use directly (e.g. 'dclaude-pwsh:latest').
+
+.PARAMETER ImageKey
+    Key referencing an image registered in ~/.dclaude/settings.json.
+
+.PARAMETER Path
+    Working directory to mount into the container. Defaults to the current directory.
+
+.PARAMETER ClaudeConfigPath
+    Path to the Claude configuration directory. Defaults to ~/.claude.
+
+.PARAMETER ClaudeArgs
+    Additional arguments passed through to the claude command inside the container.
+
+.EXAMPLE
+    Invoke-DClaude -Image 'dclaude-pwsh:latest'
+
+    Runs Claude Code using the specified image with the current directory mounted.
+
+.EXAMPLE
+    Invoke-DClaude -ImageKey 'pwsh' -Path C:\repos\my-project
+
+    Resolves the 'pwsh' image from user config and mounts the specified project directory.
+
+.EXAMPLE
+    dclaude --resume
+
+    Uses the 'dclaude' alias with project config, passing --resume to Claude Code.
+#>
 function Invoke-DClaude {
     [CmdletBinding(DefaultParameterSetName = 'Default')]
     param(

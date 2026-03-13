@@ -1,3 +1,38 @@
+<#
+.SYNOPSIS
+    Registers a Docker image in the dclaude user configuration.
+
+.DESCRIPTION
+    Adds or updates an image entry in ~/.dclaude/settings.json. Each image can
+    have platform-specific entries (Windows, Linux) with a tag and optional
+    volume mounts. If -Platform is not specified, the current Docker mode is
+    auto-detected.
+
+.PARAMETER Name
+    Name for the image entry (e.g. 'pwsh', 'dotnet-core').
+
+.PARAMETER Tag
+    Docker image tag (e.g. 'dclaude-pwsh:latest').
+
+.PARAMETER Volumes
+    Optional volume mount specifications (e.g. 'C:/host:C:/container:ro').
+
+.PARAMETER Platform
+    Target platform: Windows or Linux. Auto-detected from Docker if omitted.
+
+.PARAMETER Force
+    Overwrite an existing platform entry for this image name.
+
+.EXAMPLE
+    Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:latest'
+
+    Registers the image for the current Docker platform (auto-detected).
+
+.EXAMPLE
+    Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh-linux:latest' -Platform Linux
+
+    Registers the image explicitly for Linux.
+#>
 function Add-DClaudeImage {
     [CmdletBinding(SupportsShouldProcess)]
     param(

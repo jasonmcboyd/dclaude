@@ -1,3 +1,29 @@
+<#
+.SYNOPSIS
+    Removes a Docker image entry from the dclaude user configuration.
+
+.DESCRIPTION
+    Removes an image or a specific platform entry from ~/.dclaude/settings.json.
+    If removing a specific platform leaves no platforms, the entire image entry
+    is removed.
+
+.PARAMETER Name
+    Name of the image entry to remove.
+
+.PARAMETER Platform
+    Remove only this platform (Windows or Linux). If omitted, removes the
+    entire image entry with all platforms.
+
+.EXAMPLE
+    Remove-DClaudeImage -Name 'pwsh'
+
+    Removes the 'pwsh' image entry entirely (all platforms).
+
+.EXAMPLE
+    Remove-DClaudeImage -Name 'pwsh' -Platform Linux
+
+    Removes only the Linux platform entry for 'pwsh'.
+#>
 function Remove-DClaudeImage {
     [CmdletBinding(SupportsShouldProcess)]
     param(
