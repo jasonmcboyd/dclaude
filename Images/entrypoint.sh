@@ -6,9 +6,8 @@ HOST_JSON="/mnt/host-claude.json"
 CLAUDE_HOME="/home/claude/.claude"
 CLAUDE_JSON="/home/claude/.claude.json"
 
-# Selectively link/copy from the host .claude directory.
-# Symlink large data dirs (zero-cost, writes persist to host).
-# Copy small config files (so we can sanitize without affecting host).
+# Selectively link from the host .claude directory.
+# Symlink dirs and files so writes (e.g. OAuth token refresh) persist to host.
 if [ -d "$HOST_DIR" ]; then
     mkdir -p "$CLAUDE_HOME"
 
@@ -23,9 +22,9 @@ if [ -d "$HOST_DIR" ]; then
         ln -sfn "$dir" "$CLAUDE_HOME/$name"
     done
 
-    # Copy top-level files (small config files), including dotfiles
+    # Symlink top-level files so writes (e.g. OAuth token refresh) persist to host.
     for file in "$HOST_DIR"/* "$HOST_DIR"/.*; do
-        [ -f "$file" ] && cp "$file" "$CLAUDE_HOME/$(basename "$file")"
+        [ -f "$file" ] && ln -sfn "$file" "$CLAUDE_HOME/$(basename "$file")"
     done
 fi
 

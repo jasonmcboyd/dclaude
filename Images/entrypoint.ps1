@@ -2,9 +2,8 @@ $hostDir = 'C:\mnt\host-claude'
 $claudeDir = "$env:USERPROFILE\.claude"
 $claudeJson = "$env:USERPROFILE\.claude.json"
 
-# Selectively link/copy from the host .claude directory.
-# Symlink large data dirs (zero-cost, writes persist to host).
-# Copy small config files (so we can sanitize without affecting host).
+# Selectively link from the host .claude directory.
+# Symlink dirs and files so writes (e.g. OAuth token refresh) persist to host.
 if (Test-Path $hostDir) {
     New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
 
@@ -18,9 +17,16 @@ if (Test-Path $hostDir) {
         }
     }
 
-    # Copy top-level files (small config files)
+    # Symlink top-level files so writes (e.g. OAuth token refresh) persist to host.
+    # Exception: .claude.json is copied (not symlinked) so we can sanitize it
+    # without modifying the host file.
     Get-ChildItem $hostDir -File | ForEach-Object {
-        Copy-Item $_.FullName "$claudeDir\$($_.Name)" -Force
+        if ($_.Name -eq '.claude.json') {
+            Copy-Item $_.FullName "$claudeDir\$($_.Name)" -Force
+            return
+        }
+        $target = "$claudeDir\$($_.Name)"
+        New-Item -ItemType SymbolicLink -Path $target -Target $_.FullName -Force | Out-Null
     }
 }
 
