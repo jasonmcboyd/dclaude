@@ -8,6 +8,8 @@ if (Test-Path $hostDir) {
     New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
 
     # Symlink directories — writes go straight to host.
+    # Note: unlike the Linux entrypoint, we do NOT skip 'plugins' or 'session-env'
+    # because Windows containers share the same OS and path structure as the host.
     # Skip 'projects' — handled below to avoid duplicate session entries in /resume.
     # Skip 'rules' — handled below so we can inject a container context file.
     Get-ChildItem $hostDir -Directory | ForEach-Object {

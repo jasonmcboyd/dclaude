@@ -8,8 +8,8 @@ param(
 )
 
 # Detect Docker's current container OS mode (reuse module helper)
-. (Join-Path $PSScriptRoot '..\src\Private\Test-DockerAvailable.ps1')
-$osType = Test-DockerAvailable
+. (Join-Path $PSScriptRoot '..\src\Private\Get-DockerContainerOS.ps1')
+$osType = Get-DockerContainerOS
 if (-not $osType) {
     throw 'Docker is not available. See error above.'
 }

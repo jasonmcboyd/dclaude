@@ -88,13 +88,11 @@ Describe 'Get-DClaudeImage' {
         }
     }
 
-    Context 'Read-SettingsFile vs Merge-SettingsFiles inconsistency' {
-        # This test documents the known issue: Get-DClaudeImage uses
-        # Get-DClaudeUserConfig (which calls Merge-SettingsFiles and sees
-        # settings.local.json), but Add-DClaudeImage uses Read-SettingsFile
-        # (which only reads settings.json). If settings.local.json overrides
-        # the images property, there is a mismatch between what you add and
-        # what you see.
+    Context 'local override visibility in merged config' {
+        # Get-DClaudeImage uses the merged config (base + local override).
+        # Add-DClaudeImage and Remove-DClaudeImage now also check the merged
+        # config for existence/duplicate detection, so local overrides are no
+        # longer silently shadowed.
 
         It 'sees images from local override via merge (shallow merge replaces base)' {
             # Simulate: base has "base" image, local has "local" image.

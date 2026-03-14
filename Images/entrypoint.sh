@@ -13,6 +13,9 @@ if [ -d "$HOST_DIR" ]; then
 
     # Symlink directories — writes go straight to host.
     # Skip 'plugins' — host copy has Windows git config that causes junk folders.
+    # Skip 'session-env' — host session environment files reference host paths
+    #   and executables that don't exist inside the container. Not skipped on
+    #   Windows because Windows containers share the same OS and path structure.
     # Skip 'projects' — handled below to avoid duplicate session entries in /resume.
     # Skip 'rules' — handled below so we can inject a container context file.
     for dir in "$HOST_DIR"/*/; do
@@ -73,9 +76,17 @@ if [ -n "$DCLAUDE_VOLUMES" ]; then
     printf '%s\n' "$DCLAUDE_VOLUMES" | tr '|' '\n' | while IFS= read -r vol; do
         [ -z "$vol" ] && continue
         # Parse volume spec: host:container[:mode]
-        vol_host=$(printf '%s' "$vol" | sed 's/:[^:]*$//' | sed 's/:[^:]*$//')
+        # Check if the last segment is a mode flag (ro or rw)
         vol_mode=$(printf '%s' "$vol" | grep -o ':\(ro\|rw\)$' | tr -d ':')
-        vol_container=$(printf '%s' "$vol" | sed "s|^${vol_host}:||" | sed 's/:\(ro\|rw\)$//')
+        if [ -n "$vol_mode" ]; then
+            # Strip the mode suffix, then split remaining into host:container
+            vol_no_mode=$(printf '%s' "$vol" | sed 's/:\(ro\|rw\)$//')
+        else
+            vol_no_mode="$vol"
+        fi
+        # Split on the last colon to get host and container
+        vol_host=$(printf '%s' "$vol_no_mode" | sed 's/:\([^:]*\)$//')
+        vol_container=$(printf '%s' "$vol_no_mode" | sed 's/.*:\([^:]*\)$/\1/')
         if [ "$vol_mode" = "rw" ]; then
             mode_label="read/write"
         else

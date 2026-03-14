@@ -61,8 +61,9 @@ function Invoke-DClaude {
     )
 
     # Validate Docker environment and detect container OS
-    $containerOS = Test-DockerAvailable
+    $containerOS = Get-DockerContainerOS
     if (-not $containerOS) { return }
+    $containerOS = $containerOS.ToLower()
     if ($containerOS -notin @('windows', 'linux')) {
         Write-Error "Unsupported Docker OS type '$containerOS'. Only 'windows' and 'linux' are supported."
         return
@@ -81,25 +82,29 @@ function Invoke-DClaude {
     # Determine image tag and image-level volumes
     $imageTag = $null
     $imageVolumes = @()
+    $imageKeyToResolve = $null
     switch ($PSCmdlet.ParameterSetName) {
         'ByImage' {
             $imageTag = $Image
         }
         'ByImageKey' {
-            $resolved = Resolve-ImageKey $ImageKey $containerOS
-            $imageTag = $resolved.tag
-            $imageVolumes = $resolved.volumes
+            $imageKeyToResolve = $ImageKey
         }
         'Default' {
             if ($config -and $config.image) {
                 $imageTag = $config.image
             }
             elseif ($config -and $config.imageKey) {
-                $resolved = Resolve-ImageKey $config.imageKey $containerOS
-                $imageTag = $resolved.tag
-                $imageVolumes = $resolved.volumes
+                $imageKeyToResolve = $config.imageKey
             }
         }
+    }
+
+    if ($imageKeyToResolve) {
+        $resolved = Resolve-ImageKey $imageKeyToResolve $containerOS
+        if (-not $resolved) { return }
+        $imageTag = $resolved.tag
+        $imageVolumes = $resolved.volumes
     }
 
     if (-not $imageTag) {
@@ -123,7 +128,7 @@ function Invoke-DClaude {
     # Build docker run arguments
     $dockerArgs = @(
         'run', '-it', '--rm'
-        '-v', "${resolvedPath}:${containerWorkspace}"
+        '-v', "${resolvedPath}:${containerWorkspace}:rw"
         '-w', $containerWorkspace
     )
 

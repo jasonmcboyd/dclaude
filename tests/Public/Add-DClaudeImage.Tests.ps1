@@ -1,7 +1,9 @@
 BeforeAll {
     . "$PSScriptRoot/../../src/Private/Read-SettingsFile.ps1"
     . "$PSScriptRoot/../../src/Private/Save-SettingsFile.ps1"
-    . "$PSScriptRoot/../../src/Private/Test-DockerAvailable.ps1"
+    . "$PSScriptRoot/../../src/Private/Get-DockerContainerOS.ps1"
+    . "$PSScriptRoot/../../src/Private/Merge-SettingsFiles.ps1"
+    . "$PSScriptRoot/../../src/Private/Get-DClaudeUserConfig.ps1"
     . "$PSScriptRoot/../../src/Public/Add-DClaudeImage.ps1"
 }
 
@@ -13,12 +15,13 @@ Describe 'Add-DClaudeImage' {
         Mock Save-SettingsFile { $script:savedConfig = $Config }
 
         # Mock Docker so platform auto-detection doesn't need a real daemon
-        Mock Test-DockerAvailable { return 'windows' }
+        Mock Get-DockerContainerOS { return 'windows' }
     }
 
     Context 'when no user config exists' {
         It 'creates a new config with the image entry' {
             Mock Read-SettingsFile { return $null }
+            Mock Get-DClaudeUserConfig { return $null }
 
             Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:latest' -Platform Windows
 
@@ -38,6 +41,15 @@ Describe 'Add-DClaudeImage' {
                     }
                 }
             }
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        dotnet = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-dotnet:latest' }
+                        }
+                    }
+                }
+            }
 
             Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:latest' -Platform Windows
 
@@ -49,6 +61,15 @@ Describe 'Add-DClaudeImage' {
     Context 'when platform already exists without -Force' {
         It 'writes an error and does not overwrite' {
             Mock Read-SettingsFile {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:old' }
+                        }
+                    }
+                }
+            }
+            Mock Get-DClaudeUserConfig {
                 return [PSCustomObject]@{
                     images = [PSCustomObject]@{
                         pwsh = [PSCustomObject]@{
@@ -77,6 +98,15 @@ Describe 'Add-DClaudeImage' {
                     }
                 }
             }
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:old' }
+                        }
+                    }
+                }
+            }
 
             Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:new' -Platform Windows -Force
 
@@ -88,6 +118,7 @@ Describe 'Add-DClaudeImage' {
     Context 'when adding with volumes' {
         It 'includes volumes in the platform entry' {
             Mock Read-SettingsFile { return $null }
+            Mock Get-DClaudeUserConfig { return $null }
 
             Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:latest' -Platform Windows -Volumes @('C:/host:C:/container', 'C:/data:C:/data:rw')
 
@@ -99,10 +130,11 @@ Describe 'Add-DClaudeImage' {
     Context 'platform auto-detection' {
         BeforeEach {
             Mock Read-SettingsFile { return $null }
+            Mock Get-DClaudeUserConfig { return $null }
         }
 
         It 'infers Windows platform from Docker when -Platform is not specified' {
-            Mock Test-DockerAvailable { return 'windows' }
+            Mock Get-DockerContainerOS { return 'windows' }
 
             Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:latest'
 
@@ -110,7 +142,7 @@ Describe 'Add-DClaudeImage' {
         }
 
         It 'infers Linux platform from Docker when -Platform is not specified' {
-            Mock Test-DockerAvailable { return 'linux' }
+            Mock Get-DockerContainerOS { return 'linux' }
 
             Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh-linux:latest'
 
@@ -129,11 +161,61 @@ Describe 'Add-DClaudeImage' {
                     }
                 }
             }
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:latest' }
+                        }
+                    }
+                }
+            }
 
             Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh-linux:latest' -Platform Linux
 
             $script:savedConfig.images.pwsh.windows.tag | Should -Be 'dclaude-pwsh:latest'
             $script:savedConfig.images.pwsh.linux.tag | Should -Be 'dclaude-pwsh-linux:latest'
+        }
+    }
+
+    Context 'when platform exists only in local override' {
+        It 'detects the duplicate from merged config and errors without -Force' {
+            # Base settings.json has no images
+            Mock Read-SettingsFile { return $null }
+            # But merged config (including settings.local.json) has the image
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh-local:latest' }
+                        }
+                    }
+                }
+            }
+
+            Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:new' -Platform Windows -ErrorVariable err -ErrorAction SilentlyContinue
+
+            $err | Should -Not -BeNullOrEmpty
+            $err[0].ToString() | Should -BeLike '*already has*'
+            Should -Not -Invoke Save-SettingsFile
+        }
+
+        It 'allows overwrite with -Force even when only in local override' {
+            Mock Read-SettingsFile { return $null }
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh-local:latest' }
+                        }
+                    }
+                }
+            }
+
+            Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:new' -Platform Windows -Force
+
+            Should -Invoke Save-SettingsFile -Times 1
+            $script:savedConfig.images.pwsh.windows.tag | Should -Be 'dclaude-pwsh:new'
         }
     }
 }

@@ -36,27 +36,44 @@ function Remove-DClaudeImage {
     )
 
     $directory = Join-Path $HOME '.dclaude'
+    $mergedConfig = Get-DClaudeUserConfig
     $config = Read-SettingsFile -Directory $directory
 
-    if (-not $config -or -not $config.PSObject.Properties['images'] -or -not $config.images) {
+    # Check the merged view (base + local override) for existence
+    if (-not $mergedConfig -or -not $mergedConfig.PSObject.Properties['images'] -or -not $mergedConfig.images) {
         Write-Error "Image '$Name' not found in user config."
         return
     }
 
-    if (-not $config.images.PSObject.Properties[$Name]) {
+    if (-not $mergedConfig.images.PSObject.Properties[$Name]) {
         Write-Error "Image '$Name' not found in user config."
         return
     }
+
+    # Image exists in merged view; check if it exists in base settings.json for actual removal
+    $existsInBase = $config -and
+        $config.PSObject.Properties['images'] -and
+        $config.images -and
+        $config.images.PSObject.Properties[$Name]
 
     if ($Platform) {
         $platformKey = $Platform.ToLower()
-        if (-not $config.images.$Name.PSObject.Properties[$platformKey]) {
+        if (-not $mergedConfig.images.$Name.PSObject.Properties[$platformKey]) {
             Write-Error "Image '$Name' does not have a '$platformKey' platform entry in user config."
+            return
+        }
+        # Platform exists in merged view; check if removal is possible from base
+        if (-not $existsInBase -or -not $config.images.$Name.PSObject.Properties[$platformKey]) {
+            Write-Error "Image '$Name' platform '$platformKey' exists in settings.local.json but not in settings.json. Edit settings.local.json directly to remove it."
             return
         }
         $target = "Image '$Name' ($platformKey)"
     }
     else {
+        if (-not $existsInBase) {
+            Write-Error "Image '$Name' exists in settings.local.json but not in settings.json. Edit settings.local.json directly to remove it."
+            return
+        }
         $target = "Image '$Name' (all platforms)"
     }
 

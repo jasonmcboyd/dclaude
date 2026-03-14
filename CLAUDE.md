@@ -9,7 +9,7 @@ src/
   dclaude.psm1          # Module loader (dot-sources Private/ and Public/, registers alias)
   dclaude.psd1          # Module manifest
   Public/               # 7 exported functions
-  Private/              # 7 internal helper functions
+  Private/              # 8 internal helper functions
 Images/
   Dockerfile            # Windows container image
   Dockerfile.linux      # Linux container image (shared across pwsh, dotnet-core, etc.)
@@ -60,6 +60,16 @@ The launcher (`Invoke-DClaude`) **bind-mounts** the host project directory direc
 
 The entrypoint detects the existing bind mount and falls back to a symlink only if the mount isn't present.
 
+### Project Key Derivation
+
+The project key is derived from the host workspace path by replacing all `/`, `\`, and `:` characters with `-`. This algorithm is used in three places and must stay in sync:
+
+1. **Launcher** (`Invoke-DClaude.ps1`): `$hostKey = $resolvedPath -replace '[/\\:]', '-'`
+2. **Linux entrypoint** (`entrypoint.sh`): `host_key=$(printf '%s' "$DCLAUDE_HOST_PATH" | sed 's/[/\\:]/-/g')`
+3. **Windows entrypoint** (`entrypoint.ps1`): `$hostKey = $hostPath -replace '[/\\:]', '-'`
+
+Inside a container, the project key is always `-workspace` (Linux) or `C--workspace` (Windows) since the workspace is mounted at `/workspace` or `C:/workspace`.
+
 ### Entrypoints
 
 Both entrypoints (`.ps1` and `.sh`) follow the same pattern:
@@ -68,6 +78,21 @@ Both entrypoints (`.ps1` and `.sh`) follow the same pattern:
 3. Detect project dir bind mount or create symlink fallback
 4. Sanitize `.claude.json` (strip host paths, pre-accept workspace on Windows)
 5. `exec claude --dangerously-skip-permissions`
+
+**Known limitation (Windows):** The Windows entrypoint uses `& claude.cmd` rather than `exec` (which has no PowerShell equivalent). Claude runs as a child of PowerShell (PID 1), so `docker stop` signals may not propagate cleanly. This is a platform limitation, not a bug.
+
+### `.claude.json` Sanitization Rules
+
+Both entrypoints sanitize `.claude.json` before launching Claude Code. The canonical transformations are:
+
+| Field | Action |
+| --- | --- |
+| `projects` | Delete (host paths), then re-create with container workspace path pre-accepted |
+| `githubRepoPaths` | Delete (host-specific paths) |
+| `officialMarketplaceAutoInstallAttempted` | Set to `true` (skip marketplace prompt) |
+| `officialMarketplaceAutoInstalled` | Set to `true` (skip marketplace prompt) |
+
+The Linux entrypoint reads from the bind-mounted `/mnt/host-claude.json` and writes to `/home/claude/.claude.json`. The Windows entrypoint reads from `~/.claude/.claude.json` (symlinked into the `.claude` directory mount) and writes to `~/.claude.json`.
 
 ## Platform Parity
 
@@ -82,7 +107,7 @@ The Windows and Linux entrypoints implement the same logic in different language
 ## Conventions
 
 - Functions use standard PowerShell `Verb-Noun` naming with `DClaude` noun prefix
-- Error handling: `Write-Error` + early return (not `throw`)
+- Error handling: `Write-Error` + early return (not `throw`), except `throw` is acceptable for unrecoverable parse errors (corrupted JSON, malformed config files)
 - Tests mock `docker` and filesystem; use Pester's `$TestDrive` for isolation
 - Volumes default to read-only (`:ro`); explicit `:rw` required for write access
 - Environment variables `%VAR%` are expanded at runtime in volume specs

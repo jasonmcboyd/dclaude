@@ -23,6 +23,8 @@ function Merge-SettingsFiles {
             catch {
                 throw "Failed to parse $Label file '$basePath': $_"
             }
+            $schemaErrors = Test-DClaudeSettingsSchema -Config $base -Label "$Label ($basePath)"
+            foreach ($e in $schemaErrors) { Write-Warning $e }
         }
     }
 
@@ -35,6 +37,8 @@ function Merge-SettingsFiles {
             catch {
                 throw "Failed to parse $Label local override file '$localPath': $_"
             }
+            $schemaErrors = Test-DClaudeSettingsSchema -Config $local -Label "$Label ($localPath)"
+            foreach ($e in $schemaErrors) { Write-Warning $e }
         }
     }
 

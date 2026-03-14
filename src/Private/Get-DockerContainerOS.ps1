@@ -1,4 +1,4 @@
-function Test-DockerAvailable {
+function Get-DockerContainerOS {
     [CmdletBinding()]
     param()
 

@@ -32,12 +32,9 @@ Register-ArgumentCompleter -CommandName 'Set-DClaudeProject' -ParameterName 'Ima
     $images = Get-DClaudeImage
     if (-not $images) { return }
 
-    try {
-        $platform = (Test-DockerAvailable).ToLower()
-        $images = @($images | Where-Object { $_.Platform -eq $platform })
-    }
-    catch {
-        # Docker not available — complete with all image names
+    $platform = Get-DockerContainerOS
+    if ($platform) {
+        $images = @($images | Where-Object { $_.Platform -eq $platform.ToLower() })
     }
 
     $images | Select-Object -ExpandProperty Name -Unique |

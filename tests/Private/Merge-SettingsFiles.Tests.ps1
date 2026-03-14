@@ -1,4 +1,5 @@
 BeforeAll {
+    . "$PSScriptRoot/../../src/Private/Test-DClaudeSettingsSchema.ps1"
     . "$PSScriptRoot/../../src/Private/Merge-SettingsFiles.ps1"
 }
 

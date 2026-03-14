@@ -54,6 +54,7 @@ function Add-DClaudeImage {
     )
 
     $directory = Join-Path $HOME '.dclaude'
+    $mergedConfig = Get-DClaudeUserConfig
     $config = Read-SettingsFile -Directory $directory
 
     if (-not $config) {
@@ -70,7 +71,7 @@ function Add-DClaudeImage {
     }
 
     if (-not $Platform) {
-        $osType = Test-DockerAvailable
+        $osType = Get-DockerContainerOS
         if (-not $osType) { return }
         $Platform = if ($osType -eq 'windows') { 'Windows' } else { 'Linux' }
         Write-Verbose "Inferred platform '$Platform' from Docker"
@@ -78,8 +79,13 @@ function Add-DClaudeImage {
 
     $platformKey = $Platform.ToLower()
 
-    # Check if platform already exists for this entry
-    if ($config.images.$Name.PSObject.Properties[$platformKey] -and -not $Force) {
+    # Check merged config (base + local override) so local overrides are not silently shadowed
+    $existsInMerged = $mergedConfig -and
+        $mergedConfig.PSObject.Properties['images'] -and
+        $mergedConfig.images -and
+        $mergedConfig.images.PSObject.Properties[$Name] -and
+        $mergedConfig.images.$Name.PSObject.Properties[$platformKey]
+    if ($existsInMerged -and -not $Force) {
         Write-Error "Image '$Name' already has a '$platformKey' platform entry. Use -Force to overwrite or Remove-DClaudeImage to remove it first."
         return
     }

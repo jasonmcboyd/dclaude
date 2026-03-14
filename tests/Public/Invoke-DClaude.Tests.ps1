@@ -3,7 +3,7 @@ BeforeAll {
     . "$PSScriptRoot/../../src/Private/Get-DClaudeConfig.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DClaudeUserConfig.ps1"
     . "$PSScriptRoot/../../src/Private/Resolve-ImageKey.ps1"
-    . "$PSScriptRoot/../../src/Private/Test-DockerAvailable.ps1"
+    . "$PSScriptRoot/../../src/Private/Get-DockerContainerOS.ps1"
     . "$PSScriptRoot/../../src/Public/Invoke-DClaude.ps1"
 
     # Define a docker function so Pester can mock it
@@ -27,7 +27,7 @@ Describe 'Invoke-DClaude' {
         '{}' | Set-Content $script:claudeJson
 
         # Mock Docker to avoid real daemon calls
-        Mock Test-DockerAvailable { return 'windows' }
+        Mock Get-DockerContainerOS { return 'windows' }
 
         # Capture docker args instead of executing
         $script:capturedDockerArgs = $null
@@ -48,14 +48,14 @@ Describe 'Invoke-DClaude' {
 
     Context 'Docker validation' {
         It 'returns early when Docker is not available' {
-            Mock Test-DockerAvailable { return $null }
+            Mock Get-DockerContainerOS { return $null }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
             Should -Not -Invoke docker
         }
 
         It 'writes an error for unsupported Docker OS types' {
-            Mock Test-DockerAvailable { return 'freebsd' }
+            Mock Get-DockerContainerOS { return 'freebsd' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ErrorVariable err -ErrorAction SilentlyContinue
             $err | Should -Not -BeNullOrEmpty
@@ -132,7 +132,7 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'uses Windows paths when Docker OS is windows' {
-            Mock Test-DockerAvailable { return 'windows' }
+            Mock Get-DockerContainerOS { return 'windows' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
@@ -142,13 +142,35 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'uses Linux paths when Docker OS is linux' {
-            Mock Test-DockerAvailable { return 'linux' }
+            Mock Get-DockerContainerOS { return 'linux' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*/workspace*'
             $argsString | Should -BeLike '*/mnt/host-claude*'
+        }
+
+        It 'normalizes capitalized OS type to lowercase' {
+            Mock Get-DockerContainerOS { return 'Linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*/workspace*'
+        }
+    }
+
+    Context 'workspace mount mode' {
+        BeforeEach {
+            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
+        }
+
+        It 'mounts workspace with explicit :rw mode' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -Match ":\S+workspace:rw"
         }
     }
 
@@ -315,7 +337,7 @@ Describe 'Invoke-DClaude' {
 
     Context 'Windows .claude.json symlink check' {
         It 'errors when .claude.json is not a symlink on Windows' {
-            Mock Test-DockerAvailable { return 'windows' }
+            Mock Get-DockerContainerOS { return 'windows' }
             Mock Get-Item { [PSCustomObject]@{ Target = $null } } -ParameterFilter { $Path -like '*.claude.json' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ErrorVariable err -ErrorAction SilentlyContinue
@@ -326,12 +348,41 @@ Describe 'Invoke-DClaude' {
 
     Context 'Linux .claude.json mount' {
         It 'mounts .claude.json as read-only on Linux' {
-            Mock Test-DockerAvailable { return 'linux' }
+            Mock Get-DockerContainerOS { return 'linux' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*/mnt/host-claude.json:ro*'
+        }
+    }
+
+    Context 'when Resolve-ImageKey fails' {
+        It 'emits only one error when -ImageKey resolve fails' {
+            Mock Resolve-ImageKey {
+                Write-Error "Image key 'bad' not found"
+                return $null
+            }
+
+            Invoke-DClaude -ImageKey 'bad' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ErrorVariable err -ErrorAction SilentlyContinue
+            $err | Should -HaveCount 1
+            $err[0].ToString() | Should -BeLike "*not found*"
+            Should -Not -Invoke docker
+        }
+
+        It 'emits only one error when imageKey from project config resolve fails' {
+            Mock Get-DClaudeConfig {
+                return [PSCustomObject]@{ imageKey = 'missing' }
+            }
+            Mock Resolve-ImageKey {
+                Write-Error "Image key 'missing' not found"
+                return $null
+            }
+
+            Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ErrorVariable err -ErrorAction SilentlyContinue
+            $err | Should -HaveCount 1
+            $err[0].ToString() | Should -BeLike "*not found*"
+            Should -Not -Invoke docker
         }
     }
 }

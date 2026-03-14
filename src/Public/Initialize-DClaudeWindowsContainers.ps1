@@ -18,7 +18,7 @@
     Sets up the .claude.json symlink using the default Claude config path.
 #>
 function Initialize-DClaudeWindowsContainers {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess)]
     param(
         [Parameter()]
         [string]$ClaudeConfigPath = (Join-Path $HOME '.claude')
@@ -28,13 +28,13 @@ function Initialize-DClaudeWindowsContainers {
     $claudeJsonInDir = Join-Path $ClaudeConfigPath '.claude.json'
 
     if (-not (Test-Path $claudeJsonPath)) {
-        Write-Host ".claude.json not found at '$claudeJsonPath'. Nothing to do."
+        Write-Verbose ".claude.json not found at '$claudeJsonPath'. Nothing to do."
         return
     }
 
-    $item = Get-Item $claudeJsonPath
+    $item = Get-Item -Force $claudeJsonPath
     if ($item.Target) {
-        Write-Host ".claude.json is already a symlink pointing to '$($item.Target)'. Nothing to do."
+        Write-Verbose ".claude.json is already a symlink pointing to '$($item.Target)'. Nothing to do."
         return
     }
 
@@ -42,16 +42,18 @@ function Initialize-DClaudeWindowsContainers {
         New-Item -ItemType Directory -Path $ClaudeConfigPath -Force | Out-Null
     }
 
-    try {
-        Copy-Item -Path $claudeJsonPath -Destination $claudeJsonInDir -Force
-        New-Item -ItemType SymbolicLink -Path $claudeJsonPath -Target $claudeJsonInDir -Force -ErrorAction Stop | Out-Null
-        Write-Host "Copied .claude.json into '$ClaudeConfigPath' and created symlink at '$claudeJsonPath'."
-    }
-    catch {
-        # Roll back: remove the copy if the symlink failed
-        if (Test-Path $claudeJsonInDir) {
-            Remove-Item -Path $claudeJsonInDir -Force
+    if ($PSCmdlet.ShouldProcess($claudeJsonPath, 'Move into .claude directory and replace with symlink')) {
+        try {
+            Copy-Item -Path $claudeJsonPath -Destination $claudeJsonInDir -Force
+            New-Item -ItemType SymbolicLink -Path $claudeJsonPath -Target $claudeJsonInDir -Force -ErrorAction Stop | Out-Null
+            Write-Verbose "Copied .claude.json into '$ClaudeConfigPath' and created symlink at '$claudeJsonPath'."
         }
-        Write-Error "Failed to create symlink: $_"
+        catch {
+            # Roll back: remove the copy if the symlink failed
+            if (Test-Path $claudeJsonInDir) {
+                Remove-Item -Path $claudeJsonInDir -Force
+            }
+            Write-Error "Failed to create symlink: $_"
+        }
     }
 }
