@@ -32,6 +32,11 @@ COPY entrypoint.ps1 C:\entrypoint.ps1
 
 ENV DCLAUDE_CONTAINER=1
 
+# Pre-create .claude directory so it's owned by the container user. Without this,
+# Docker may create it when bind-mounting the project dir, and the entrypoint
+# might not be able to create symlinks in it.
+RUN mkdir "%USERPROFILE%\.claude"
+
 WORKDIR C:\workspace
 
 ENTRYPOINT ["powershell", "-NoProfile", "-File", "C:\\entrypoint.ps1"]

@@ -46,6 +46,11 @@ ENV HOME=/home/claude
 ENV TERM=xterm-256color
 ENV DCLAUDE_CONTAINER=1
 
+# Pre-create .claude directory so it's owned by claude. Without this, Docker
+# creates it as root when bind-mounting the project dir, and the entrypoint
+# can't create symlinks in it.
+RUN mkdir -p /home/claude/.claude
+
 # Trust mounted workspace to avoid "dubious ownership" errors
 RUN git config --global --add safe.directory /workspace
 
