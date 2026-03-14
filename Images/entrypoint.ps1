@@ -124,22 +124,34 @@ if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
 }
 
 # Link host conversation history so /resume finds conversations from the host.
-# Symlink the container's project key (C--workspace) to the host project dir
-# inside the bind mount. The symlink lives on the local filesystem (not inside
-# the bind mount), so reparse points work.
-$hostPath = $env:DCLAUDE_HOST_PATH
-$hostProjectsDir = "$hostDir\projects"
-if ($hostPath -and (Test-Path $hostProjectsDir)) {
-    $hostKey = $hostPath -replace '[/\\:]', '-'
-    $hostProjectDir = "$hostProjectsDir\$hostKey"
+# The project dir may already be bind-mounted by Invoke-DClaude (preferred, since
+# bind mounts appear as real directories to readdir). Fall back to a symlink if not.
+$projectTarget = "$claudeDir\projects\C--workspace"
+if (Test-Path $projectTarget) {
+    # Already bind-mounted by the launcher — nothing to do.
+    $sessionCount = @(Get-ChildItem $projectTarget -Filter '*.jsonl' -ErrorAction SilentlyContinue).Count
+    Write-Host "[dclaude] Project dir mounted with $sessionCount session(s)" -ForegroundColor DarkGray
+}
+else {
+    $hostPath = $env:DCLAUDE_HOST_PATH
+    $hostProjectsDir = "$hostDir\projects"
+    if ($hostPath -and (Test-Path $hostProjectsDir)) {
+        $hostKey = $hostPath -replace '[/\\:]', '-'
+        $hostProjectDir = "$hostProjectsDir\$hostKey"
 
-    if (-not (Test-Path $hostProjectDir)) {
-        New-Item -ItemType Directory -Path $hostProjectDir -Force | Out-Null
+        if (-not (Test-Path $hostProjectDir)) {
+            New-Item -ItemType Directory -Path $hostProjectDir -Force | Out-Null
+        }
+
+        $containerProjectsDir = "$claudeDir\projects"
+        New-Item -ItemType Directory -Path $containerProjectsDir -Force | Out-Null
+        New-Item -ItemType SymbolicLink -Path "$containerProjectsDir\C--workspace" -Target $hostProjectDir -Force | Out-Null
+        $sessionCount = @(Get-ChildItem $hostProjectDir -Filter '*.jsonl' -ErrorAction SilentlyContinue).Count
+        Write-Host "[dclaude] Linked $sessionCount session(s) from $hostProjectDir" -ForegroundColor DarkGray
     }
-
-    $containerProjectsDir = "$claudeDir\projects"
-    New-Item -ItemType Directory -Path $containerProjectsDir -Force | Out-Null
-    New-Item -ItemType SymbolicLink -Path "$containerProjectsDir\C--workspace" -Target $hostProjectDir -Force | Out-Null
+    else {
+        Write-Warning "[dclaude] No DCLAUDE_HOST_PATH or no host projects dir (DCLAUDE_HOST_PATH='$hostPath')"
+    }
 }
 
 & C:\nodejs\claude.cmd --dangerously-skip-permissions @args

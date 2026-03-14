@@ -34,6 +34,9 @@ RUN existing=$(getent passwd 1000 | cut -d: -f1); \
     if [ -n "$existing" ] && [ "$existing" != "claude" ]; then userdel "$existing"; fi; \
     useradd -m -u 1000 claude
 
+# Install Pester 5 for running tests (only if PowerShell is available)
+RUN command -v pwsh > /dev/null && pwsh -Command "Install-Module Pester -Force -Scope AllUsers -SkipPublisherCheck" || true
+
 # Entrypoint script copies host Claude config to writable home directory
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
