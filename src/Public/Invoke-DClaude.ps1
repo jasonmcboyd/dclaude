@@ -198,6 +198,23 @@ function Invoke-DClaude {
     $dockerArgs += '-e'
     $dockerArgs += "DCLAUDE_HOST_PATH=$resolvedPath"
 
+    # Mount the host project directory directly at the container's project path.
+    # This must be a bind mount (not a symlink) because Claude Code's multi-worktree
+    # resume uses readdir with {withFileTypes: true}, which returns isDirectory()=false
+    # for symlinks — causing symlinked project dirs to be silently skipped.
+    $hostKey = $resolvedPath -replace '[/\\:]', '-'
+    $hostProjectDir = Join-Path $ClaudeConfigPath 'projects' $hostKey
+    if (Test-Path $hostProjectDir) {
+        if ($containerOS -eq 'windows') {
+            $containerProjectDir = 'C:/Users/ContainerUser/.claude/projects/C--workspace'
+        }
+        else {
+            $containerProjectDir = '/home/claude/.claude/projects/-workspace'
+        }
+        $dockerArgs += '-v'
+        $dockerArgs += "${hostProjectDir}:${containerProjectDir}"
+    }
+
     # Add image tag
     $dockerArgs += $imageTag
 

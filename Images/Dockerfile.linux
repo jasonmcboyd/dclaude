@@ -27,8 +27,12 @@ RUN ARCH=$(uname -m) && \
 # Install Claude Code globally
 RUN npm install -g @anthropic-ai/claude-code
 
-# Create non-root user (Claude Code refuses --dangerously-skip-permissions as root)
-RUN useradd -m claude
+# Create non-root user with fixed UID (Claude Code refuses --dangerously-skip-permissions as root).
+# Fixed UID ensures consistent file ownership across image rebuilds.
+# Remove any existing UID 1000 user first (e.g. 'app' in .NET SDK images).
+RUN existing=$(getent passwd 1000 | cut -d: -f1); \
+    if [ -n "$existing" ] && [ "$existing" != "claude" ]; then userdel "$existing"; fi; \
+    useradd -m -u 1000 claude
 
 # Entrypoint script copies host Claude config to writable home directory
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh

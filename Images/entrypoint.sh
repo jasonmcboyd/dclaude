@@ -86,14 +86,26 @@ if [ -n "$DCLAUDE_VOLUMES" ]; then
 fi
 
 # Link host conversation history so /resume finds conversations from the host.
-# Only expose the current project's sessions (as -workspace) to avoid duplicates.
-if [ -n "$DCLAUDE_HOST_PATH" ] && [ -d "$HOST_DIR/projects" ]; then
+# The project dir may already be bind-mounted by Invoke-DClaude (preferred, since
+# bind mounts appear as real directories to readdir). Fall back to a symlink if not.
+project_target="$CLAUDE_HOME/projects/-workspace"
+if [ -d "$project_target" ]; then
+    # Already bind-mounted by the launcher — nothing to do.
+    session_count=$(ls "$project_target"/*.jsonl 2>/dev/null | wc -l)
+    echo "[dclaude] Project dir mounted with $session_count session(s)" >&2
+elif [ -n "$DCLAUDE_HOST_PATH" ] && [ -d "$HOST_DIR/projects" ]; then
     host_key=$(printf '%s' "$DCLAUDE_HOST_PATH" | sed 's/[/\\:]/-/g')
     host_project_dir="$HOST_DIR/projects/$host_key"
     if [ -d "$host_project_dir" ]; then
         mkdir -p "$CLAUDE_HOME/projects"
-        ln -sfn "$host_project_dir" "$CLAUDE_HOME/projects/-workspace"
+        ln -sfn "$host_project_dir" "$project_target"
+        session_count=$(ls "$host_project_dir"/*.jsonl 2>/dev/null | wc -l)
+        echo "[dclaude] Linked $session_count session(s) from $host_project_dir" >&2
+    else
+        echo "[dclaude] WARN: host project dir not found: $host_project_dir" >&2
     fi
+else
+    echo "[dclaude] WARN: no DCLAUDE_HOST_PATH or no host projects dir (DCLAUDE_HOST_PATH='$DCLAUDE_HOST_PATH')" >&2
 fi
 
 # Sanitize .claude.json — strip Windows paths that cause junk folders
