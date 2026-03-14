@@ -2,6 +2,7 @@ BeforeAll {
     . "$PSScriptRoot/../../src/Private/Read-SettingsFile.ps1"
     . "$PSScriptRoot/../../src/Private/Save-SettingsFile.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DockerContainerOS.ps1"
+    . "$PSScriptRoot/../../src/Private/Test-DClaudeSettingsSchema.ps1"
     . "$PSScriptRoot/../../src/Private/Merge-SettingsFiles.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DClaudeUserConfig.ps1"
     . "$PSScriptRoot/../../src/Public/Add-DClaudeImage.ps1"
@@ -148,6 +149,14 @@ Describe 'Add-DClaudeImage' {
 
             $script:savedConfig.images.pwsh.PSObject.Properties['linux'] | Should -Not -BeNullOrEmpty
         }
+
+        It 'returns early without saving when Docker is unavailable' {
+            Mock Get-DockerContainerOS { return $null }
+
+            Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:latest' -ErrorVariable err -ErrorAction SilentlyContinue
+
+            Should -Not -Invoke Save-SettingsFile
+        }
     }
 
     Context 'adding a second platform to an existing image' {
@@ -175,6 +184,42 @@ Describe 'Add-DClaudeImage' {
 
             $script:savedConfig.images.pwsh.windows.tag | Should -Be 'dclaude-pwsh:latest'
             $script:savedConfig.images.pwsh.linux.tag | Should -Be 'dclaude-pwsh-linux:latest'
+        }
+    }
+
+    Context 'WhatIf support' {
+        It 'does not invoke Save-SettingsFile when -WhatIf is used' {
+            Mock Read-SettingsFile { return $null }
+            Mock Get-DClaudeUserConfig { return $null }
+
+            Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:latest' -Platform Windows -WhatIf
+
+            Should -Not -Invoke Save-SettingsFile
+        }
+
+        It 'does not invoke Save-SettingsFile when -WhatIf is used with -Force on existing entry' {
+            Mock Read-SettingsFile {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:old' }
+                        }
+                    }
+                }
+            }
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:old' }
+                        }
+                    }
+                }
+            }
+
+            Add-DClaudeImage -Name 'pwsh' -Tag 'dclaude-pwsh:new' -Platform Windows -Force -WhatIf
+
+            Should -Not -Invoke Save-SettingsFile
         }
     }
 

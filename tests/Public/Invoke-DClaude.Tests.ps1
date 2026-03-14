@@ -1,9 +1,14 @@
 BeforeAll {
+    . "$PSScriptRoot/../../src/Private/Test-DClaudeSettingsSchema.ps1"
     . "$PSScriptRoot/../../src/Private/Merge-SettingsFiles.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DClaudeConfig.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DClaudeUserConfig.ps1"
     . "$PSScriptRoot/../../src/Private/Resolve-ImageKey.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DockerContainerOS.ps1"
+    . "$PSScriptRoot/../../src/Private/Set-VolumeDefaultMode.ps1"
+    . "$PSScriptRoot/../../src/Private/Resolve-ContainerPaths.ps1"
+    . "$PSScriptRoot/../../src/Private/Get-VolumeArgs.ps1"
+    . "$PSScriptRoot/../../src/Private/Get-EnvironmentPassthroughArgs.ps1"
     . "$PSScriptRoot/../../src/Public/Invoke-DClaude.ps1"
 
     # Define a docker function so Pester can mock it
@@ -37,6 +42,10 @@ Describe 'Invoke-DClaude' {
 
         # Suppress project config from leaking in from the real filesystem
         Mock Get-DClaudeConfig { return $null }
+
+        # Default .claude.json symlink check — returns a valid symlink target.
+        # The 'Windows .claude.json symlink check' context overrides this with Target = $null.
+        Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
     }
 
     AfterEach {
@@ -65,8 +74,6 @@ Describe 'Invoke-DClaude' {
 
     Context 'image resolution with -Image parameter' {
         It 'uses the provided image tag directly' {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
-
             Invoke-DClaude -Image 'my-image:v1' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             Should -Invoke docker
@@ -76,7 +83,6 @@ Describe 'Invoke-DClaude' {
 
     Context 'image resolution with -ImageKey parameter' {
         It 'resolves the image key to a tag' {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
             Mock Resolve-ImageKey {
                 return [PSCustomObject]@{ tag = 'dclaude-pwsh:latest'; volumes = @() }
             }
@@ -90,7 +96,6 @@ Describe 'Invoke-DClaude' {
 
     Context 'image resolution from project config' {
         It 'uses image from project config when no param specified' {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
             Mock Get-DClaudeConfig {
                 return [PSCustomObject]@{ image = 'project-image:v2' }
             }
@@ -102,7 +107,6 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'resolves imageKey from project config' {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
             Mock Get-DClaudeConfig {
                 return [PSCustomObject]@{ imageKey = 'pwsh' }
             }
@@ -117,6 +121,26 @@ Describe 'Invoke-DClaude' {
         }
     }
 
+    Context 'image takes precedence over imageKey in project config' {
+        It 'uses image and does not call Resolve-ImageKey' {
+            Mock Get-DClaudeConfig {
+                return [PSCustomObject]@{
+                    image    = 'direct-image:v1'
+                    imageKey = 'pwsh'
+                }
+            }
+            Mock Resolve-ImageKey {
+                return [PSCustomObject]@{ tag = 'dclaude-pwsh:latest'; volumes = @() }
+            }
+
+            Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Invoke docker
+            $script:capturedDockerArgs -join ' ' | Should -BeLike '*direct-image:v1*'
+            Should -Not -Invoke Resolve-ImageKey
+        }
+    }
+
     Context 'when no image is available from any source' {
         It 'writes an error' {
             Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ErrorVariable err -ErrorAction SilentlyContinue
@@ -127,10 +151,6 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'container path selection' {
-        BeforeEach {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
-        }
-
         It 'uses Windows paths when Docker OS is windows' {
             Mock Get-DockerContainerOS { return 'windows' }
 
@@ -162,10 +182,6 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'workspace mount mode' {
-        BeforeEach {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
-        }
-
         It 'mounts workspace with explicit :rw mode' {
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
@@ -175,10 +191,6 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'volume handling' {
-        BeforeEach {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
-        }
-
         It 'appends :ro to volumes without an explicit mode' {
             Mock Resolve-ImageKey {
                 return [PSCustomObject]@{
@@ -231,10 +243,6 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'environment variable passthrough' {
-        BeforeEach {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
-        }
-
         It 'passes ANTHROPIC_ prefixed variables' {
             [Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY', 'test-key')
 
@@ -276,10 +284,6 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'DCLAUDE_VOLUMES environment variable' {
-        BeforeEach {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
-        }
-
         It 'sets DCLAUDE_VOLUMES as pipe-separated list when volumes exist' {
             Mock Resolve-ImageKey {
                 return [PSCustomObject]@{
@@ -304,10 +308,6 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'docker run arguments structure' {
-        BeforeEach {
-            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
-        }
-
         It 'includes run -it --rm flags' {
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
@@ -354,6 +354,30 @@ Describe 'Invoke-DClaude' {
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*/mnt/host-claude.json:ro*'
+        }
+    }
+
+    Context 'mount display on startup' {
+        It 'writes volume mounts to host before launching' {
+            Mock Write-Host { }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq 'dclaude: mounting volumes:' }
+        }
+
+        It 'displays user-configured volumes' {
+            Mock Write-Host { }
+            Mock Resolve-ImageKey {
+                return [PSCustomObject]@{
+                    tag     = 'dclaude-pwsh:latest'
+                    volumes = @('C:/host-data:C:/container-data')
+                }
+            }
+
+            Invoke-DClaude -ImageKey 'pwsh' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Invoke Write-Host -ParameterFilter { $Object -like '*C:/host-data:C:/container-data*' }
         }
     }
 

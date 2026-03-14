@@ -1,4 +1,5 @@
 BeforeAll {
+    . "$PSScriptRoot/../../src/Private/Read-SettingsFile.ps1"
     . "$PSScriptRoot/../../src/Public/Set-DClaudeProject.ps1"
 }
 
@@ -97,6 +98,30 @@ Describe 'Set-DClaudeProject' {
 
             Join-Path $newDir '.dclaude' | Should -Exist
             Join-Path $newDir '.dclaude/settings.local.json' | Should -Exist
+        }
+    }
+
+    Context 'WhatIf support' {
+        It 'does not create settings.local.json when -WhatIf is used' {
+            $whatIfDir = Join-Path $TestDrive 'whatif-project'
+            New-Item -Path $whatIfDir -ItemType Directory -Force | Out-Null
+
+            Set-DClaudeProject -ImageKey 'pwsh' -Path $whatIfDir -WhatIf
+
+            Join-Path $whatIfDir '.dclaude/settings.local.json' | Should -Not -Exist
+        }
+
+        It 'does not modify existing settings.local.json when -WhatIf is used' {
+            $whatIfDir = Join-Path $TestDrive 'whatif-existing'
+            $dclaudeDir = Join-Path $whatIfDir '.dclaude'
+            New-Item -Path $dclaudeDir -ItemType Directory -Force | Out-Null
+            $originalContent = '{"imageKey":"original"}'
+            $originalContent | Set-Content (Join-Path $dclaudeDir 'settings.local.json')
+
+            Set-DClaudeProject -ImageKey 'changed' -Path $whatIfDir -WhatIf
+
+            $actual = Get-Content (Join-Path $dclaudeDir 'settings.local.json') -Raw
+            ($actual | ConvertFrom-Json).imageKey | Should -Be 'original'
         }
     }
 

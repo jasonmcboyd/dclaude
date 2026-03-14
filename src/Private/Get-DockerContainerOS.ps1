@@ -8,22 +8,18 @@ function Get-DockerContainerOS {
         return
     }
 
-    # Check that Docker daemon is running
-    $dockerInfo = docker info 2>&1
+    # Check that Docker daemon is running and get OS type
+    $osType = docker info --format '{{.OSType}}' 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error 'Docker is not running. Start Docker Desktop and try again.'
         return
     }
 
-    # Detect container OS type
-    $osTypeMatch = $dockerInfo | Select-String -Pattern '^\s*OSType:\s*(.+)$'
-
-    if (-not $osTypeMatch) {
+    $osType = "$osType".Trim()
+    if ([string]::IsNullOrWhiteSpace($osType)) {
         Write-Error "Unable to determine Docker OS type from 'docker info' output. Ensure Docker is running correctly."
         return
     }
-
-    $osType = $osTypeMatch.Matches | ForEach-Object { $_.Groups[1].Value.Trim() }
 
     return $osType
 }

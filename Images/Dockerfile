@@ -37,6 +37,8 @@ ENV DCLAUDE_CONTAINER=1
 # might not be able to create symlinks in it.
 RUN mkdir "%USERPROFILE%\.claude"
 
+USER ContainerUser
+
 WORKDIR C:\workspace
 
 ENTRYPOINT ["powershell", "-NoProfile", "-File", "C:\\entrypoint.ps1"]

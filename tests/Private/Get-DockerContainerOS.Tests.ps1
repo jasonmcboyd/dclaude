@@ -5,6 +5,8 @@ BeforeAll {
 
 Describe 'Get-DockerContainerOS' {
 
+    AfterEach { $global:LASTEXITCODE = 0 }
+
     Context 'when Docker command is not found' {
         It 'writes an error' {
             Mock Get-Command { return $null } -ParameterFilter { $Name -eq 'docker' }
@@ -31,7 +33,7 @@ Describe 'Get-DockerContainerOS' {
     Context 'when Docker returns Windows OS type' {
         It 'returns windows' {
             Mock Get-Command { return @{ Name = 'docker' } } -ParameterFilter { $Name -eq 'docker' }
-            Mock docker { $global:LASTEXITCODE = 0; ' OSType: windows' }
+            Mock docker { $global:LASTEXITCODE = 0; 'windows' }
 
             $result = Get-DockerContainerOS
 
@@ -42,7 +44,7 @@ Describe 'Get-DockerContainerOS' {
     Context 'when Docker returns Linux OS type' {
         It 'returns linux' {
             Mock Get-Command { return @{ Name = 'docker' } } -ParameterFilter { $Name -eq 'docker' }
-            Mock docker { $global:LASTEXITCODE = 0; ' OSType: linux' }
+            Mock docker { $global:LASTEXITCODE = 0; 'linux' }
 
             $result = Get-DockerContainerOS
 
@@ -53,7 +55,7 @@ Describe 'Get-DockerContainerOS' {
     Context 'when OS type cannot be determined' {
         It 'writes an error' {
             Mock Get-Command { return @{ Name = 'docker' } } -ParameterFilter { $Name -eq 'docker' }
-            Mock docker { $global:LASTEXITCODE = 0; 'some output without ostype' }
+            Mock docker { $global:LASTEXITCODE = 0; '' }
 
             Get-DockerContainerOS -ErrorVariable err -ErrorAction SilentlyContinue
 

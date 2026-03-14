@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -e
 
 HOST_DIR="/mnt/host-claude"
@@ -19,6 +19,7 @@ if [ -d "$HOST_DIR" ]; then
     # Skip 'projects' — handled below to avoid duplicate session entries in /resume.
     # Skip 'rules' — handled below so we can inject a container context file.
     for dir in "$HOST_DIR"/*/; do
+        [ -d "$dir" ] || continue
         name=$(basename "$dir")
         [ "$name" = "plugins" ] && continue
         [ "$name" = "session-env" ] && continue
@@ -102,35 +103,38 @@ fi
 project_target="$CLAUDE_HOME/projects/-workspace"
 if [ -d "$project_target" ]; then
     # Already bind-mounted by the launcher — nothing to do.
-    session_count=$(ls "$project_target"/*.jsonl 2>/dev/null | wc -l)
+    session_count=$(find "$project_target" -maxdepth 1 -name '*.jsonl' 2>/dev/null | wc -l)
     echo "[dclaude] Project dir mounted with $session_count session(s)" >&2
 elif [ -n "$DCLAUDE_HOST_PATH" ] && [ -d "$HOST_DIR/projects" ]; then
     host_key=$(printf '%s' "$DCLAUDE_HOST_PATH" | sed 's/[/\\:]/-/g')
     host_project_dir="$HOST_DIR/projects/$host_key"
-    if [ -d "$host_project_dir" ]; then
-        mkdir -p "$CLAUDE_HOME/projects"
-        ln -sfn "$host_project_dir" "$project_target"
-        session_count=$(ls "$host_project_dir"/*.jsonl 2>/dev/null | wc -l)
-        echo "[dclaude] Linked $session_count session(s) from $host_project_dir" >&2
-    else
-        echo "[dclaude] WARN: host project dir not found: $host_project_dir" >&2
+    if [ ! -d "$host_project_dir" ]; then
+        mkdir -p "$host_project_dir"
     fi
+    mkdir -p "$CLAUDE_HOME/projects"
+    ln -sfn "$host_project_dir" "$project_target"
+    session_count=$(find "$host_project_dir" -maxdepth 1 -name '*.jsonl' 2>/dev/null | wc -l)
+    echo "[dclaude] Linked $session_count session(s) from $host_project_dir" >&2
 else
     echo "[dclaude] WARN: no DCLAUDE_HOST_PATH or no host projects dir (DCLAUDE_HOST_PATH='$DCLAUDE_HOST_PATH')" >&2
 fi
 
 # Sanitize .claude.json — strip Windows paths that cause junk folders
 if [ -f "$HOST_JSON" ]; then
-    node -e "
+    if ! node -e "
         const fs = require('fs');
-        const cfg = JSON.parse(fs.readFileSync('$HOST_JSON', 'utf8'));
+        const [hostJson, claudeJson] = process.argv.slice(1);
+        const cfg = JSON.parse(fs.readFileSync(hostJson, 'utf8'));
         delete cfg.projects;
         delete cfg.githubRepoPaths;
         cfg.officialMarketplaceAutoInstallAttempted = true;
         cfg.officialMarketplaceAutoInstalled = true;
         cfg.projects = { '/workspace': { allowedTools: [], hasTrustDialogAccepted: true } };
-        fs.writeFileSync('$CLAUDE_JSON', JSON.stringify(cfg, null, 2));
-    "
+        fs.writeFileSync(claudeJson, JSON.stringify(cfg, null, 2));
+    " "$HOST_JSON" "$CLAUDE_JSON"; then
+        echo "[dclaude] FATAL: Failed to sanitize .claude.json" >&2
+        exit 1
+    fi
 fi
 
 exec claude --dangerously-skip-permissions "$@"

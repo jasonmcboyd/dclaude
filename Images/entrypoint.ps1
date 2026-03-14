@@ -1,3 +1,7 @@
+$ErrorActionPreference = 'Stop'
+
+try {
+
 $hostDir = 'C:\mnt\host-claude'
 $claudeDir = "$env:USERPROFILE\.claude"
 $claudeJson = "$env:USERPROFILE\.claude.json"
@@ -69,35 +73,27 @@ $contextLines = @(
 $volumes = $env:DCLAUDE_VOLUMES
 if ($volumes) {
     foreach ($vol in ($volumes -split '\|')) {
-        $parts = $vol -split ':'
-        # Volume format: host:container or host:container:mode
-        # On Windows, paths may start with a drive letter (e.g. C:/foo), so we
-        # need to handle the colon in drive letters. Split on ':' and recombine.
-        if ($parts.Count -ge 4) {
-            # e.g. C:/host:C:/container:ro → host=C:/host, container=C:/container, mode=ro
-            $volHost = "$($parts[0]):$($parts[1])"
-            $volContainer = "$($parts[2]):$($parts[3])"
-            $volMode = if ($parts.Count -ge 5) { $parts[4] } else { 'read-only' }
-        }
-        elseif ($parts.Count -eq 3) {
-            # Could be host:container:mode (Linux) or C:/host:container (Windows no mode)
-            if ($parts[2] -in @('ro', 'rw')) {
-                $volHost = $parts[0]
-                $volContainer = $parts[1]
-                $volMode = $parts[2]
-            }
-            else {
-                $volHost = "$($parts[0]):$($parts[1])"
-                $volContainer = $parts[2]
-                $volMode = 'read-only'
-            }
+        # Parse volume spec: host:container[:mode]
+        # Use regex to detect and strip trailing :ro or :rw (same approach as entrypoint.sh)
+        if ($vol -match ':(ro|rw)$') {
+            $volMode = $Matches[1]
+            $volNoMode = $vol -replace ':(ro|rw)$', ''
         }
         else {
-            $volHost = $parts[0]
-            $volContainer = $parts[1]
-            $volMode = 'read-only'
+            $volMode = 'ro'
+            $volNoMode = $vol
         }
-        $modeLabel = if ($volMode -eq 'rw') { 'read/write' } elseif ($volMode -eq 'ro') { 'read-only' } else { $volMode }
+        # Split on the last colon to get host and container paths.
+        # This handles Windows drive letters (e.g. C:/host:C:/container) correctly.
+        if ($volNoMode -match '^(.+):([^:]+)$') {
+            $volHost = $Matches[1]
+            $volContainer = $Matches[2]
+        }
+        else {
+            $volHost = $volNoMode
+            $volContainer = $volNoMode
+        }
+        $modeLabel = if ($volMode -eq 'rw') { 'read/write' } else { 'read-only' }
         $contextLines += "| ``$volHost`` | ``$volContainer`` | $modeLabel |"
     }
 }
@@ -107,7 +103,13 @@ $contextLines -join "`n" | Set-Content "$containerRulesDir\dclaude-context.md" -
 # Sanitize .claude.json — strip Windows paths and pre-accept container workspace
 $claudeJsonInDir = "$claudeDir\.claude.json"
 if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
-    $cfg = Get-Content $claudeJsonInDir -Raw | ConvertFrom-Json
+    try {
+        $cfg = Get-Content $claudeJsonInDir -Raw | ConvertFrom-Json
+    }
+    catch {
+        Write-Error "[dclaude] Failed to parse .claude.json: $_"
+        exit 1
+    }
 
     $cfg.PSObject.Properties.Remove('projects')
     $cfg.PSObject.Properties.Remove('githubRepoPaths')
@@ -135,7 +137,6 @@ if (Test-Path $projectTarget) {
     Write-Host "[dclaude] Project dir mounted with $sessionCount session(s)" -ForegroundColor DarkGray
 }
 else {
-    $hostPath = $env:DCLAUDE_HOST_PATH
     $hostProjectsDir = "$hostDir\projects"
     if ($hostPath -and (Test-Path $hostProjectsDir)) {
         $hostKey = $hostPath -replace '[/\\:]', '-'
@@ -156,4 +157,14 @@ else {
     }
 }
 
+}
+catch {
+    Write-Host "[dclaude] FATAL: Entrypoint failed: $_" -ForegroundColor Red
+    exit 1
+}
+
+# Reset ErrorActionPreference so claude.cmd stderr does not trigger
+# a PowerShell terminating error under the script-level 'Stop' preference.
+$ErrorActionPreference = 'Continue'
 & C:\nodejs\claude.cmd --dangerously-skip-permissions @args
+exit $LASTEXITCODE

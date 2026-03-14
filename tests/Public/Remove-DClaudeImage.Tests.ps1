@@ -1,6 +1,7 @@
 BeforeAll {
     . "$PSScriptRoot/../../src/Private/Read-SettingsFile.ps1"
     . "$PSScriptRoot/../../src/Private/Save-SettingsFile.ps1"
+    . "$PSScriptRoot/../../src/Private/Test-DClaudeSettingsSchema.ps1"
     . "$PSScriptRoot/../../src/Private/Merge-SettingsFiles.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DClaudeUserConfig.ps1"
     . "$PSScriptRoot/../../src/Public/Remove-DClaudeImage.ps1"
@@ -164,6 +165,60 @@ Describe 'Remove-DClaudeImage' {
             Remove-DClaudeImage -Name 'pwsh' -Platform Linux -ErrorVariable err -ErrorAction SilentlyContinue
             $err | Should -Not -BeNullOrEmpty
             $err[0].ToString() | Should -BeLike "*does not have*linux*"
+        }
+    }
+
+    Context 'WhatIf support' {
+        It 'does not invoke Save-SettingsFile when -WhatIf is used on full removal' {
+            Mock Read-SettingsFile {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:latest' }
+                        }
+                    }
+                }
+            }
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:latest' }
+                        }
+                    }
+                }
+            }
+
+            Remove-DClaudeImage -Name 'pwsh' -WhatIf
+
+            Should -Not -Invoke Save-SettingsFile
+        }
+
+        It 'does not invoke Save-SettingsFile when -WhatIf is used on platform removal' {
+            Mock Read-SettingsFile {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:latest' }
+                            linux   = [PSCustomObject]@{ tag = 'dclaude-pwsh-linux:latest' }
+                        }
+                    }
+                }
+            }
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:latest' }
+                            linux   = [PSCustomObject]@{ tag = 'dclaude-pwsh-linux:latest' }
+                        }
+                    }
+                }
+            }
+
+            Remove-DClaudeImage -Name 'pwsh' -Platform Windows -WhatIf
+
+            Should -Not -Invoke Save-SettingsFile
         }
     }
 

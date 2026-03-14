@@ -49,19 +49,7 @@ function Set-DClaudeProject {
     $directory = Join-Path $Path '.dclaude'
     $localPath = Join-Path $directory 'settings.local.json'
 
-    $config = $null
-    if (Test-Path $localPath) {
-        $content = Get-Content -Path $localPath -Raw
-        if (-not [string]::IsNullOrWhiteSpace($content)) {
-            try {
-                $config = $content | ConvertFrom-Json
-            }
-            catch {
-                throw "Failed to parse settings file '$localPath': $_"
-            }
-        }
-    }
-
+    $config = Read-SettingsFile -Directory $directory -FileName 'settings.local.json'
     if (-not $config) {
         $config = [PSCustomObject]@{}
     }

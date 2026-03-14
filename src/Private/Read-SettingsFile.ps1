@@ -2,10 +2,13 @@ function Read-SettingsFile {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string]$Directory
+        [string]$Directory,
+
+        [Parameter()]
+        [string]$FileName = 'settings.json'
     )
 
-    $filePath = Join-Path $Directory 'settings.json'
+    $filePath = Join-Path $Directory $FileName
 
     if (-not (Test-Path $filePath)) {
         return $null

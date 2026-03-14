@@ -223,7 +223,7 @@ These commands manage the global image registry at `~/.dclaude/settings.json`.
 
 ## Managing Project Config
 
-Use `Set-DClaudeProject` and `Get-DClaudeProject` to manage the project config (`.dclaude/settings.json`) without editing JSON directly.
+Use `Set-DClaudeProject` and `Get-DClaudeProject` to manage project-local overrides (`.dclaude/settings.local.json`) without editing JSON directly. To create the shared project config (`.dclaude/settings.json`), edit the file directly.
 
 ```powershell
 # Set project to use a registered image key
@@ -287,6 +287,29 @@ Every container run by `dclaude` receives these mounts automatically:
 | `~/.claude` | `C:/Users/ContainerUser/.claude` | `/home/claude/.claude` | read-only | Claude settings and history |
 
 Additional volume mounts are layered from two sources: image-level volumes defined in the matching platform block of the user config, and project-level volumes from the `volumes` array in the project config. Both sets are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.
+
+## Security Model
+
+dclaude's purpose is to move the trust boundary from Claude Code's permission system to the Docker container. Inside the container, Claude runs with `--dangerously-skip-permissions` and has full access to everything mounted. The container limits what "everything" means.
+
+**Compared to running Claude Code directly on the host** (the alternative), dclaude provides a strictly smaller attack surface:
+
+| Concern | Host (no container) | dclaude |
+|---------|-------------------|---------|
+| Filesystem access | Full host filesystem | Only explicitly mounted paths |
+| Environment variables | All host env vars visible | Only `ANTHROPIC_*`, `CLAUDE_CODE_*`, `CLOUD_ML_*` forwarded |
+| Claude config (`~/.claude`) | Full read/write | Mounted read-write (same access, but contained) |
+| `.claude.json` sanitization | Host file used as-is | Host paths stripped, workspace pre-accepted |
+| Process isolation | None — runs as your user | Docker container boundary |
+| Network | Full host network | Docker default network (outbound only) |
+
+**Things dclaude does not protect against:**
+
+- **Malicious container images.** If you pull an untrusted image and run it with dclaude, the image has full access to your mounted workspace and Claude config. Build your own images or use trusted sources.
+- **Secrets in mounted volumes.** Volumes you configure (via image config or project config) are accessible inside the container. Don't mount directories containing credentials unless you intend Claude to access them.
+- **Workspace modifications.** The workspace is mounted read-write by design — Claude needs to edit your code. A misbehaving Claude session can modify any file in the mounted workspace, same as on the host.
+
+The container is not a sandbox against a determined attacker — it is a practical boundary that limits blast radius compared to running Claude Code unrestricted on your host.
 
 ## Private Files
 

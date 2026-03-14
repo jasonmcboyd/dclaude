@@ -112,113 +112,37 @@ function Invoke-DClaude {
         return
     }
 
-    # Set container paths based on OS type
-    if ($containerOS -eq 'windows') {
-        $containerWorkspace = 'C:/workspace'
-        # Mount at a staging path, not directly at ~/.claude, so the entrypoint
-        # can create symlinks on the local filesystem pointing into the mount.
-        # (Windows containers cannot create reparse points inside bind mounts.)
-        $containerClaude = 'C:/mnt/host-claude'
-    }
-    else {
-        $containerWorkspace = '/workspace'
-        $containerClaude = '/mnt/host-claude'
+    # Resolve container paths and platform-specific mounts
+    $paths = Resolve-ContainerPaths -ContainerOS $containerOS -ResolvedPath $resolvedPath -ClaudeConfigPath $ClaudeConfigPath
+    if ($paths.Errors.Count -gt 0) {
+        foreach ($err in $paths.Errors) {
+            Write-Error $err
+        }
+        return
     }
 
     # Build docker run arguments
+    $leafName = (Split-Path $resolvedPath -Leaf) -replace '[^a-zA-Z0-9_.-]', '-'
+    $containerName = "dclaude-${leafName}-$(Get-Random -Maximum 9999)"
     $dockerArgs = @(
         'run', '-it', '--rm'
-        '-v', "${resolvedPath}:${containerWorkspace}:rw"
-        '-w', $containerWorkspace
+        '--name', $containerName
+        '--cap-drop=ALL'
+        '--security-opt=no-new-privileges'
+        '-v', "${resolvedPath}:$($paths.Workspace):rw"
+        '-w', $paths.Workspace
     )
 
-    # Mount Claude config directory and settings file
-    if (Test-Path $ClaudeConfigPath) {
-        $dockerArgs += '-v'
-        $dockerArgs += "${ClaudeConfigPath}:${containerClaude}:rw"
-    }
-    else {
-        Write-Warning "Claude config path '$ClaudeConfigPath' not found. Container will start without Claude configuration."
-    }
+    # Append platform-specific mount args (claude config, .claude.json, project dir)
+    $dockerArgs += $paths.DockerArgs
 
-    # Mount .claude.json (lives in home dir, separate from .claude/ directory)
-    # Windows containers cannot bind-mount single files. On Windows, run
-    # Initialize-DClaudeWindowsContainers to symlink .claude.json into
-    # ~/.claude/ so it's carried by the directory mount above.
-    $claudeJsonPath = Join-Path (Split-Path $ClaudeConfigPath) '.claude.json'
-    if (Test-Path $claudeJsonPath) {
-        if ($containerOS -eq 'windows') {
-            if (-not (Get-Item $claudeJsonPath).Target) {
-                Write-Error ".claude.json is not symlinked into '$ClaudeConfigPath'. Run Initialize-DClaudeWindowsContainers to fix this."
-                return
-            }
-        }
-        else {
-            $containerClaudeJson = '/mnt/host-claude.json'
-            $dockerArgs += '-v'
-            $dockerArgs += "${claudeJsonPath}:${containerClaudeJson}:ro"
-        }
-    }
+    # Append volume mounts from image config and project config
+    $projectVolumes = if ($config -and $config.volumes) { @($config.volumes) } else { @() }
+    $volumeArgs = Get-VolumeArgs -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes
+    $dockerArgs += $volumeArgs
 
-    # Mount volumes from image config and project config
-    $allVolumes = @()
-    if ($imageVolumes.Count -gt 0) {
-        $allVolumes += $imageVolumes
-    }
-    if ($config -and $config.volumes) {
-        $allVolumes += @($config.volumes)
-    }
-    foreach ($vol in $allVolumes) {
-        $expanded = [Environment]::ExpandEnvironmentVariables($vol)
-        # Enforce read-only unless the volume spec already includes a mode.
-        # Use a regex that accounts for Windows drive letters (e.g. C:/host:C:/container).
-        if ($expanded -notmatch ':(ro|rw)$') {
-            $expanded = "${expanded}:ro"
-        }
-        $dockerArgs += '-v'
-        $dockerArgs += $expanded
-    }
-
-    # Pass additional volume descriptions so the container context file can list them.
-    # Apply the same :ro default so modes in the context file match what docker uses.
-    if ($allVolumes.Count -gt 0) {
-        $expandedVols = $allVolumes | ForEach-Object {
-            $v = [Environment]::ExpandEnvironmentVariables($_)
-            if ($v -notmatch ':(ro|rw)$') { $v = "${v}:ro" }
-            $v
-        }
-        $dockerArgs += '-e'
-        $dockerArgs += "DCLAUDE_VOLUMES=$($expandedVols -join '|')"
-    }
-
-    # Pass through Claude Code environment variables (API keys, Vertex/Bedrock config, etc.)
-    foreach ($key in [Environment]::GetEnvironmentVariables().Keys) {
-        if ($key -match '^(ANTHROPIC_|CLAUDE_CODE_|CLOUD_ML_)') {
-            $dockerArgs += '-e'
-            $dockerArgs += $key
-        }
-    }
-
-    # Pass host path so the container can link conversation history for /resume
-    $dockerArgs += '-e'
-    $dockerArgs += "DCLAUDE_HOST_PATH=$resolvedPath"
-
-    # Mount the host project directory directly at the container's project path.
-    # This must be a bind mount (not a symlink) because Claude Code's multi-worktree
-    # resume uses readdir with {withFileTypes: true}, which returns isDirectory()=false
-    # for symlinks — causing symlinked project dirs to be silently skipped.
-    $hostKey = $resolvedPath -replace '[/\\:]', '-'
-    $hostProjectDir = Join-Path $ClaudeConfigPath 'projects' $hostKey
-    if (Test-Path $hostProjectDir) {
-        if ($containerOS -eq 'windows') {
-            $containerProjectDir = 'C:/Users/ContainerUser/.claude/projects/C--workspace'
-        }
-        else {
-            $containerProjectDir = '/home/claude/.claude/projects/-workspace'
-        }
-        $dockerArgs += '-v'
-        $dockerArgs += "${hostProjectDir}:${containerProjectDir}"
-    }
+    # Append environment variable passthrough
+    $dockerArgs += Get-EnvironmentPassthroughArgs -HostPath $resolvedPath
 
     # Add image tag
     $dockerArgs += $imageTag
@@ -227,6 +151,15 @@ function Invoke-DClaude {
     if ($ClaudeArgs -and $ClaudeArgs.Count -gt 0) {
         $dockerArgs += $ClaudeArgs
     }
+
+    # Display effective mounts before launching
+    Write-Host "dclaude: mounting volumes:" -ForegroundColor DarkGray
+    for ($i = 0; $i -lt $dockerArgs.Count; $i++) {
+        if ($dockerArgs[$i] -eq '-v' -and ($i + 1) -lt $dockerArgs.Count) {
+            Write-Host "  $($dockerArgs[$i + 1])" -ForegroundColor DarkGray
+        }
+    }
+    Write-Host ""
 
     # Launch the container
     & docker @dockerArgs

@@ -70,4 +70,14 @@ Describe 'Read-SettingsFile' {
         $result = Read-SettingsFile -Directory $TestDrive
         $result.source | Should -Be 'base'
     }
+
+    Context 'when -FileName specifies a custom file' {
+        It 'reads the specified file instead of settings.json' {
+            @{ source = 'base' } | ConvertTo-Json | Set-Content "$TestDrive/settings.json"
+            @{ source = 'local' } | ConvertTo-Json | Set-Content "$TestDrive/settings.local.json"
+
+            $result = Read-SettingsFile -Directory $TestDrive -FileName 'settings.local.json'
+            $result.source | Should -Be 'local'
+        }
+    }
 }

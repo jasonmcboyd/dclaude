@@ -50,6 +50,45 @@ Describe 'Test-DClaudeSettingsSchema' {
             $errors[0] | Should -BeLike "*pwsh*must be an object*"
         }
 
+        It 'reports error when platform entry is not an object' {
+            $config = [PSCustomObject]@{
+                images = [PSCustomObject]@{
+                    pwsh = [PSCustomObject]@{
+                        linux = 'bad-string'
+                    }
+                }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*linux*must be an object*"
+        }
+
+        It 'reports error when tag is an empty string' {
+            $config = [PSCustomObject]@{
+                images = [PSCustomObject]@{
+                    pwsh = [PSCustomObject]@{
+                        linux = [PSCustomObject]@{ tag = '' }
+                    }
+                }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*tag*"
+        }
+
+        It 'reports error when tag is whitespace only' {
+            $config = [PSCustomObject]@{
+                images = [PSCustomObject]@{
+                    pwsh = [PSCustomObject]@{
+                        linux = [PSCustomObject]@{ tag = '  ' }
+                    }
+                }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*tag*"
+        }
+
         It 'reports error when platform entry is missing tag' {
             $config = [PSCustomObject]@{
                 images = [PSCustomObject]@{

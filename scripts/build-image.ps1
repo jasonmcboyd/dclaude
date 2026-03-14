@@ -7,11 +7,13 @@ param(
     [switch]$All
 )
 
-# Detect Docker's current container OS mode (reuse module helper)
-. (Join-Path $PSScriptRoot '..\src\Private\Get-DockerContainerOS.ps1')
-$osType = Get-DockerContainerOS
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+# Detect Docker's current container OS mode
+$osType = docker info --format '{{.OSType}}' 2>$null
 if (-not $osType) {
-    throw 'Docker is not available. See error above.'
+    throw 'Docker is not running or not installed.'
 }
 $Platform = if ($osType -eq 'windows') { 'Windows' } else { 'Linux' }
 Write-Host "Detected Docker mode: $Platform"
