@@ -409,4 +409,55 @@ Describe 'Invoke-DClaude' {
             Should -Not -Invoke docker
         }
     }
+
+    Context 'Docker access' {
+        It 'mounts Docker socket on Linux when -DockerAccess is specified' {
+            Mock Get-DockerContainerOS { return 'linux' }
+            Mock Test-Path { return $true } -ParameterFilter { $Path -eq '/var/run/docker.sock' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*/var/run/docker.sock:/var/run/docker.sock:rw*'
+        }
+
+        It 'mounts Docker named pipe on Windows when -DockerAccess is specified' {
+            Mock Get-DockerContainerOS { return 'windows' }
+            Mock Test-Path { return $true } -ParameterFilter { $Path -eq '//./pipe/docker_engine' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*//./pipe/docker_engine://./pipe/docker_engine*'
+        }
+
+        It 'does not mount Docker socket when -DockerAccess is not specified' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -Not -BeLike '*docker.sock*'
+        }
+
+        It 'errors when Docker socket does not exist on Linux' {
+            Mock Get-DockerContainerOS { return 'linux' }
+            Mock Test-Path { return $false } -ParameterFilter { $Path -eq '/var/run/docker.sock' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess -ErrorVariable err -ErrorAction SilentlyContinue
+            $err | Should -Not -BeNullOrEmpty
+            $err[0].ToString() | Should -BeLike '*Docker socket not found*'
+            Should -Not -Invoke docker
+        }
+
+        It 'errors when Docker named pipe does not exist on Windows' {
+            Mock Get-DockerContainerOS { return 'windows' }
+            Mock Test-Path { return $false } -ParameterFilter { $Path -eq '//./pipe/docker_engine' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess -ErrorVariable err -ErrorAction SilentlyContinue
+            $err | Should -Not -BeNullOrEmpty
+            $err[0].ToString() | Should -BeLike '*Docker named pipe not found*'
+            Should -Not -Invoke docker
+        }
+    }
 }

@@ -84,6 +84,7 @@ dclaude
 | `-Path` | `string` | No | Directory to mount as the workspace. Defaults to the current directory. |
 | `-ClaudeConfigPath` | `string` | No | Path to the Claude config directory to mount into the container. Defaults to `~/.claude`. |
 | `-ClaudeArgs` | `string[]` | No | Any additional arguments passed through to the `claude` entrypoint inside the container (e.g., `--resume`). Use `--` to separate from dclaude parameters. |
+| `-DockerAccess` | `switch` | No | Mounts the Docker socket (Linux) or named pipe (Windows) into the container, allowing Claude to run Docker commands. See [Docker Access](#docker-access) below. |
 
 When neither `-Image` nor `-ImageKey` is specified, the image is resolved from the project config file (`.dclaude/settings.json`) in the working directory.
 
@@ -287,6 +288,25 @@ Every container run by `dclaude` receives these mounts automatically:
 | `~/.claude` | `C:/Users/ContainerUser/.claude` | `/home/claude/.claude` | read-only | Claude settings and history |
 
 Additional volume mounts are layered from two sources: image-level volumes defined in the matching platform block of the user config, and project-level volumes from the `volumes` array in the project config. Both sets are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.
+
+## Docker Access
+
+Use the `-DockerAccess` switch to let Claude build images, run containers, or interact with Docker inside the container:
+
+```powershell
+dclaude -DockerAccess
+```
+
+This mounts the host's Docker socket or named pipe into the container:
+
+| Host OS | Mount |
+|---|---|
+| Linux / macOS | `/var/run/docker.sock:/var/run/docker.sock:rw` |
+| Windows | `//./pipe/docker_engine://./pipe/docker_engine` |
+
+The switch validates that the socket or pipe exists before launching the container and errors if Docker is not available on the host.
+
+**Security note:** Mounting the Docker socket gives Claude full access to the host's Docker daemon. This effectively grants root-equivalent access to the host — Claude can start privileged containers, mount arbitrary host paths, etc. Only use `-DockerAccess` when you need it and understand the implications.
 
 ## Security Model
 

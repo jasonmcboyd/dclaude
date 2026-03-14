@@ -26,6 +26,10 @@
 .PARAMETER ClaudeArgs
     Additional arguments passed through to the claude command inside the container.
 
+.PARAMETER DockerAccess
+    Mounts the Docker socket (Linux) or named pipe (Windows) into the container,
+    allowing Claude to run Docker commands. Requires Docker to be accessible on the host.
+
 .EXAMPLE
     Invoke-DClaude -Image 'dclaude-pwsh:latest'
 
@@ -40,6 +44,11 @@
     dclaude --resume
 
     Uses the 'dclaude' alias with project config, passing --resume to Claude Code.
+
+.EXAMPLE
+    dclaude -DockerAccess
+
+    Runs with the Docker socket mounted, allowing Claude to build images and run containers.
 #>
 function Invoke-DClaude {
     [CmdletBinding(DefaultParameterSetName = 'Default')]
@@ -57,7 +66,9 @@ function Invoke-DClaude {
         [string]$ClaudeConfigPath = (Join-Path $HOME '.claude'),
 
         [Parameter(ValueFromRemainingArguments)]
-        [string[]]$ClaudeArgs
+        [string[]]$ClaudeArgs,
+
+        [switch]$DockerAccess
     )
 
     # Validate Docker environment and detect container OS
@@ -143,6 +154,28 @@ function Invoke-DClaude {
 
     # Append environment variable passthrough
     $dockerArgs += Get-EnvironmentPassthroughArgs -HostPath $resolvedPath
+
+    # Append Docker socket/pipe mount if requested
+    if ($DockerAccess) {
+        if ($containerOS -eq 'linux') {
+            $socketPath = '/var/run/docker.sock'
+            if (-not (Test-Path -Path $socketPath)) {
+                Write-Error "Docker socket not found at '$socketPath'. Is Docker running?"
+                return
+            }
+            $dockerArgs += '-v'
+            $dockerArgs += '/var/run/docker.sock:/var/run/docker.sock:rw'
+        }
+        else {
+            $pipePath = '//./pipe/docker_engine'
+            if (-not (Test-Path -Path $pipePath)) {
+                Write-Error "Docker named pipe not found at '$pipePath'. Is Docker running?"
+                return
+            }
+            $dockerArgs += '-v'
+            $dockerArgs += '//./pipe/docker_engine://./pipe/docker_engine'
+        }
+    }
 
     # Add image tag
     $dockerArgs += $imageTag
