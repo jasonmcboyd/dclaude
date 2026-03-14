@@ -117,6 +117,7 @@ if [ -f "$HOST_JSON" ]; then
         delete cfg.githubRepoPaths;
         cfg.officialMarketplaceAutoInstallAttempted = true;
         cfg.officialMarketplaceAutoInstalled = true;
+        cfg.projects = { '/workspace': { allowedTools: [], hasTrustDialogAccepted: true } };
         fs.writeFileSync('$CLAUDE_JSON', JSON.stringify(cfg, null, 2));
     "
 fi
