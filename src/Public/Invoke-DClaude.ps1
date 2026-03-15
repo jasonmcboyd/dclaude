@@ -138,7 +138,6 @@ function Invoke-DClaude {
     $dockerArgs = @(
         'run', '-it', '--rm'
         '--name', $containerName
-        '--cap-drop=ALL'
         '--security-opt=no-new-privileges'
         '-v', "${resolvedPath}:$($paths.Workspace):rw"
         '-w', $paths.Workspace
