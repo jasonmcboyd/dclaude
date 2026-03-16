@@ -100,7 +100,7 @@ Defines named images and their per-platform volume mounts. Lives in your home di
     "pwsh": {
       "windows": {
         "tag": "dclaude-pwsh:latest",
-        "volumes": ["%USERPROFILE%\\.nuget:C:/Users/ContainerUser/.nuget"]
+        "volumes": ["%USERPROFILE%\\.nuget:C:/Users/ContainerAdministrator/.nuget"]
       },
       "linux": {
         "tag": "dclaude-pwsh-linux:latest"
@@ -197,7 +197,7 @@ Add-DClaudeImage -Name dotnet-core -Tag dclaude-dotnet-core:latest -Platform Win
 Add-DClaudeImage -Name dotnet-core -Tag dclaude-dotnet-core-linux:latest -Platform Linux
 
 # Add with volume mounts
-Add-DClaudeImage -Name dotnet-core -Tag dclaude-dotnet-core:latest -Platform Windows -Volumes '%USERPROFILE%\.nuget:C:/Users/ContainerUser/.nuget'
+Add-DClaudeImage -Name dotnet-core -Tag dclaude-dotnet-core:latest -Platform Windows -Volumes '%USERPROFILE%\.nuget:C:/Users/ContainerAdministrator/.nuget'
 
 # List all images
 Get-DClaudeImage
@@ -285,7 +285,7 @@ Every container run by `dclaude` receives these mounts automatically:
 | Host path | Container path (Windows) | Container path (Linux) | Mode | Purpose |
 |---|---|---|---|---|
 | `$Path` (working dir) | `C:/workspace` | `/workspace` | read-write | Project files |
-| `~/.claude` | `C:/Users/ContainerUser/.claude` | `/home/claude/.claude` | read-only | Claude settings and history |
+| `~/.claude` | `C:/Users/ContainerAdministrator/.claude` | `/home/claude/.claude` | read-only | Claude settings and history |
 
 Additional volume mounts are layered from two sources: image-level volumes defined in the matching platform block of the user config, and project-level volumes from the `volumes` array in the project config. Both sets are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.
 

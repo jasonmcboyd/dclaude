@@ -91,7 +91,7 @@ Describe 'Resolve-ContainerPaths' {
 
             $result = Resolve-ContainerPaths -ContainerOS 'windows' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
             $argsString = $result.DockerArgs -join ' '
-            $argsString | Should -BeLike '*:C:/Users/ContainerUser/.claude/projects/C--workspace*'
+            $argsString | Should -BeLike '*:C:/Users/ContainerAdministrator/.claude/projects/C--workspace*'
         }
 
         It 'does not add project volume when host project dir does not exist' {

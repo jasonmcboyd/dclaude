@@ -21,9 +21,6 @@ RUN curl -sLo node.zip https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSI
     setx /M PATH "C:\nodejs;%PATH%" && `
     C:\nodejs\npm install -g @anthropic-ai/claude-code
 
-# Enable developer mode so symlinks can be created without elevation
-RUN reg add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock" /v AllowDevelopmentWithoutDevLicense /t REG_DWORD /d 1 /f
-
 # Trust mounted workspace to avoid "dubious ownership" errors
 RUN git config --global --add safe.directory C:/workspace
 
@@ -32,12 +29,9 @@ COPY entrypoint.ps1 C:\entrypoint.ps1
 
 ENV DCLAUDE_CONTAINER=1
 
-# Pre-create .claude directory so it's owned by the container user. Without this,
-# Docker may create it when bind-mounting the project dir, and the entrypoint
-# might not be able to create symlinks in it.
+# Pre-create .claude directory so Docker doesn't create it with restrictive
+# permissions when bind-mounting the project dir underneath it.
 RUN mkdir "%USERPROFILE%\.claude"
-
-USER ContainerUser
 
 WORKDIR C:\workspace
 

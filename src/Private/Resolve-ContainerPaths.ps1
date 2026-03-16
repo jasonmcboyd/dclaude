@@ -62,7 +62,7 @@ function Resolve-ContainerPaths {
     $hostProjectDir = Join-Path $ClaudeConfigPath 'projects' $hostKey
     if (Test-Path $hostProjectDir) {
         if ($ContainerOS -eq 'windows') {
-            $containerProjectDir = 'C:/Users/ContainerUser/.claude/projects/C--workspace'
+            $containerProjectDir = 'C:/Users/ContainerAdministrator/.claude/projects/C--workspace'
         }
         else {
             $containerProjectDir = '/home/claude/.claude/projects/-workspace'
