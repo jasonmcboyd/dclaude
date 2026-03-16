@@ -6,6 +6,17 @@ HOST_JSON="/mnt/host-claude.json"
 CLAUDE_HOME="/home/claude/.claude"
 CLAUDE_JSON="/home/claude/.claude.json"
 
+# --- Root detection and dynamic UID matching ---
+if [ "$(id -u)" = "0" ]; then
+    # Match claude user's UID to the workspace file owner (for native Linux hosts).
+    # On WSL2, workspace files appear as root-owned (UID 0) due to 9P mount — skip in that case.
+    ws_uid=$(stat -c '%u' /workspace 2>/dev/null || echo "1000")
+    if [ "$ws_uid" != "0" ] && [ "$ws_uid" != "1000" ]; then
+        echo "[dclaude] Matching claude UID to workspace owner ($ws_uid)" >&2
+        usermod -u "$ws_uid" claude
+    fi
+fi
+
 # Selectively link from the host .claude directory.
 # Symlink dirs and files so writes (e.g. OAuth token refresh) persist to host.
 if [ -d "$HOST_DIR" ]; then
@@ -134,6 +145,24 @@ if [ -f "$HOST_JSON" ]; then
     " "$HOST_JSON" "$CLAUDE_JSON"; then
         echo "[dclaude] FATAL: Failed to sanitize .claude.json" >&2
         exit 1
+    fi
+fi
+
+# --- Privilege drop (when running as root) or direct exec ---
+if [ "$(id -u)" = "0" ]; then
+    # Fix ownership of home dir (entrypoint ran as root, may have created files as root)
+    chown -Rh claude:claude /home/claude
+
+    # Drop to claude user with ambient capabilities for WSL2 file timestamp support
+    if command -v setpriv > /dev/null 2>&1; then
+        exec setpriv --reuid=claude --regid=claude --init-groups \
+            --inh-caps=+fowner,+dac_override \
+            --ambient-caps=+fowner,+dac_override \
+            --no-new-privs \
+            -- claude --dangerously-skip-permissions "$@"
+    else
+        echo "[dclaude] WARN: setpriv not found, falling back to su (no ambient caps)" >&2
+        exec su -s /bin/sh claude -c "exec claude --dangerously-skip-permissions$(printf ' %q' "$@")"
     fi
 fi
 

@@ -410,6 +410,42 @@ Describe 'Invoke-DClaude' {
         }
     }
 
+    Context 'Linux root entrypoint' {
+        It 'includes --user 0:0 for Linux containers' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $script:capturedDockerArgs | Should -Contain '--user'
+            $userIdx = [array]::IndexOf($script:capturedDockerArgs, '--user')
+            $script:capturedDockerArgs[$userIdx + 1] | Should -Be '0:0'
+        }
+
+        It 'does not include --user for Windows containers' {
+            Mock Get-DockerContainerOS { return 'windows' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $script:capturedDockerArgs | Should -Not -Contain '--user'
+        }
+
+        It 'omits --security-opt=no-new-privileges for Linux (entrypoint sets it via setpriv)' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $script:capturedDockerArgs | Should -Not -Contain '--security-opt=no-new-privileges'
+        }
+
+        It 'includes --security-opt=no-new-privileges for Windows containers' {
+            Mock Get-DockerContainerOS { return 'windows' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $script:capturedDockerArgs | Should -Contain '--security-opt=no-new-privileges'
+        }
+    }
+
     Context 'Docker access' {
         It 'mounts Docker socket on Linux when -DockerAccess is specified' {
             Mock Get-DockerContainerOS { return 'linux' }
