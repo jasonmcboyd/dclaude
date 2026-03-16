@@ -142,14 +142,9 @@ function Invoke-DClaude {
         '-w', $paths.Workspace
     )
 
-    # Linux entrypoint starts as root (Dockerfile USER root) to match UIDs and set
-    # ambient capabilities, then drops to claude via setpriv with --no-new-privs.
-    # Don't set --security-opt=no-new-privileges here for Linux — it would block
-    # the ambient capability raise (kernel rejects prctl(PR_CAP_AMBIENT) when
-    # no_new_privs is already set).
-    if ($containerOS -ne 'linux') {
-        $dockerArgs += '--security-opt=no-new-privileges'
-    }
+    # Linux: entrypoint drops privileges via setpriv with --no-new-privs.
+    # Windows: --security-opt=no-new-privileges is not supported.
+    # No --security-opt flag is needed on either platform.
 
     # Append platform-specific mount args (claude config, .claude.json, project dir)
     $dockerArgs += $paths.DockerArgs
