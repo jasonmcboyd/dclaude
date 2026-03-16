@@ -142,17 +142,12 @@ function Invoke-DClaude {
         '-w', $paths.Workspace
     )
 
-    if ($containerOS -eq 'linux') {
-        # Start as root so the entrypoint can match UIDs and drop privileges with
-        # ambient capabilities (CAP_FOWNER + CAP_DAC_OVERRIDE). The entrypoint sets
-        # no_new_privs via setpriv AFTER raising ambient caps — setting it here via
-        # --security-opt would block the ambient capability raise (kernel rejects
-        # prctl(PR_CAP_AMBIENT) when no_new_privs is already set).
-        $dockerArgs += '--user'
-        $dockerArgs += '0:0'
-    }
-    else {
-        # Windows containers don't use ambient capabilities; apply no-new-privileges here.
+    # Linux entrypoint starts as root (Dockerfile USER root) to match UIDs and set
+    # ambient capabilities, then drops to claude via setpriv with --no-new-privs.
+    # Don't set --security-opt=no-new-privileges here for Linux — it would block
+    # the ambient capability raise (kernel rejects prctl(PR_CAP_AMBIENT) when
+    # no_new_privs is already set).
+    if ($containerOS -ne 'linux') {
         $dockerArgs += '--security-opt=no-new-privileges'
     }
 

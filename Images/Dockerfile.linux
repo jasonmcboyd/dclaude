@@ -42,20 +42,23 @@ RUN command -v pwsh > /dev/null && pwsh -Command "Install-Module Pester -Force -
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Safe default for direct image use. The launcher overrides this with --user 0:0
-# so the entrypoint can match UIDs and drop privileges with ambient capabilities.
+# Build steps that need to run as the claude user for correct file ownership.
 USER claude
 ENV HOME=/home/claude
 ENV TERM=xterm-256color
 ENV DCLAUDE_CONTAINER=1
 
-# Pre-create .claude directory so it's owned by claude. Without this, Docker
-# creates it as root when bind-mounting the project dir, and the entrypoint
-# can't create symlinks in it.
+# Pre-create .claude directory owned by claude so Docker doesn't create it as
+# root when bind-mounting the project dir.
 RUN mkdir -p /home/claude/.claude
 
 # Trust mounted workspace to avoid "dubious ownership" errors
 RUN git config --global --add safe.directory /workspace
+
+# Switch to root for the entrypoint. It needs root to match UIDs and set ambient
+# capabilities (CAP_FOWNER + CAP_DAC_OVERRIDE), then drops to claude via setpriv
+# before launching Claude Code.
+USER root
 
 WORKDIR /workspace
 
