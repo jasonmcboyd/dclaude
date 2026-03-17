@@ -163,6 +163,17 @@ catch {
     exit 1
 }
 
+# Run init scripts (user common → user image → project common → project image)
+$initBase = 'C:\mnt\init.d'
+foreach ($initDir in @("$initBase\user-common", "$initBase\user-image", "$initBase\project-common", "$initBase\project-image")) {
+    if (Test-Path $initDir) {
+        Get-ChildItem $initDir -Filter '*.ps1' | Sort-Object Name | ForEach-Object {
+            Write-Host "[dclaude] Running init script: $($_.Name)" -ForegroundColor DarkGray
+            . $_.FullName
+        }
+    }
+}
+
 # Reset ErrorActionPreference so claude.cmd stderr does not trigger
 # a PowerShell terminating error under the script-level 'Stop' preference.
 $ErrorActionPreference = 'Continue'

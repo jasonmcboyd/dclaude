@@ -77,7 +77,8 @@ Both entrypoints (`.ps1` and `.sh`) follow the same pattern:
 2. Create `rules/` as a real directory, symlink host rules in, generate `dclaude-context.md`
 3. Detect project dir bind mount or create symlink fallback
 4. Sanitize `.claude.json` (strip host paths, pre-accept workspace on Windows)
-5. `exec claude --dangerously-skip-permissions`
+5. Run init scripts from `/mnt/init.d/` directories (user-common, user-image, project-common, project-image)
+6. `exec claude --dangerously-skip-permissions`
 
 **Known limitation (Windows):** The Windows entrypoint uses `& claude.cmd` rather than `exec` (which has no PowerShell equivalent). Claude runs as a child of PowerShell (PID 1), so `docker stop` signals may not propagate cleanly. This is a platform limitation, not a bug.
 

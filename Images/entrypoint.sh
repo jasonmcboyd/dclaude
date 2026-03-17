@@ -148,6 +148,17 @@ if [ -f "$HOST_JSON" ]; then
     fi
 fi
 
+# Run init scripts (user common → user image → project common → project image)
+INIT_BASE="/mnt/init.d"
+for init_dir in "$INIT_BASE/user-common" "$INIT_BASE/user-image" "$INIT_BASE/project-common" "$INIT_BASE/project-image"; do
+    [ -d "$init_dir" ] || continue
+    for script in "$init_dir"/*.sh; do
+        [ -f "$script" ] || continue
+        echo "[dclaude] Running init script: $(basename "$script")" >&2
+        . "$script"
+    done
+done
+
 # --- Privilege drop (when running as root) or direct exec ---
 if [ "$(id -u)" = "0" ]; then
     # Fix ownership of home dir (entrypoint ran as root, may have created files as root)

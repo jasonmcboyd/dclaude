@@ -9,7 +9,7 @@ function Get-EnvironmentPassthroughArgs {
 
     # Pass through Claude Code environment variables (API keys, Vertex/Bedrock config, etc.)
     foreach ($envVar in Get-ChildItem Env:) {
-        if ($envVar.Name -match '^(ANTHROPIC_|CLAUDE_CODE_|CLOUD_ML_|NUGET_|VSS_NUGET_)') {
+        if ($envVar.Name -match '^(ANTHROPIC_|CLAUDE_CODE_|CLOUD_ML_)') {
             $dockerArgs += '-e'
             $dockerArgs += $envVar.Name
         }

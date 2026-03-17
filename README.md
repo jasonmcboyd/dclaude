@@ -331,6 +331,49 @@ dclaude's purpose is to move the trust boundary from Claude Code's permission sy
 
 The container is not a sandbox against a determined attacker — it is a practical boundary that limits blast radius compared to running Claude Code unrestricted on your host.
 
+## Init Scripts
+
+Init scripts let you customize container startup without modifying base images. Place scripts in `init.d` directories and they run automatically before Claude launches.
+
+### Directory Convention
+
+Scripts are discovered by convention from two locations (user-level and project-level), each with a `common` folder (all images) and an image-specific folder:
+
+| Directory | Scope | Runs for |
+|---|---|---|
+| `~/.dclaude/common.init.d/` | User | All images |
+| `~/.dclaude/<image-name>.init.d/` | User | Named image only |
+| `.dclaude/common.init.d/` | Project | All images |
+| `.dclaude/<image-name>.init.d/` | Project | Named image only |
+
+Execution order: user common → user image → project common → project image.
+
+### Platform Scripts
+
+The Linux entrypoint sources `*.sh` files; the Windows entrypoint dot-sources `*.ps1` files. To support both platforms, place both variants in the same directory:
+
+```
+~/.dclaude/dotnet-core.init.d/
+  setup-nuget.sh       # Linux containers
+  setup-nuget.ps1      # Windows containers
+```
+
+Scripts are sourced (not executed as subprocesses), so environment variable changes persist into the Claude session.
+
+### Example: Adding a NuGet Source
+
+```sh
+# ~/.dclaude/dotnet-core.init.d/setup-nuget.sh
+dotnet nuget add source "https://pkgs.dev.azure.com/myorg/_packaging/myfeed/nuget/v3/index.json" \
+  --name myfeed --username az --password "$VSS_NUGET_TOKEN" --store-password-in-clear-text
+```
+
+### Known Limitations
+
+- **Shell assumption:** Linux scripts must be `*.sh` (Bash); Windows scripts must be `*.ps1` (PowerShell). There is no shebang-based dispatch — future versions may support arbitrary script languages.
+- **Entrypoint coupling:** Init script execution is implemented in the dclaude-provided entrypoints (`entrypoint.sh` / `entrypoint.ps1`). Custom base images that don't use these entrypoints will not run init scripts automatically. A decoupled mechanism (e.g., entrypoint wrapper) may be added in the future.
+- **Image name required:** Image-specific init directories (e.g., `dotnet-core.init.d/`) only work when the image is resolved via `-ImageKey` or a project config `imageKey`. When using `-Image` with a direct tag, only `common.init.d/` scripts run.
+
 ## Private Files
 
 The `LocalImages/` and `LocalScripts/` directories are gitignored. Use them for private Dockerfiles, build scripts, or any other files you don't want committed to the repository.

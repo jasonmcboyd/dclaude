@@ -5,8 +5,7 @@ BeforeAll {
 Describe 'Get-EnvironmentPassthroughArgs' {
 
     AfterEach {
-        foreach ($key in @('ANTHROPIC_API_KEY', 'CLAUDE_CODE_TEST', 'CLOUD_ML_REGION', 'MY_CUSTOM_VAR',
-                'NUGET_CREDENTIALPROVIDER_SESSIONTOKENCACHE_ENABLED', 'VSS_NUGET_EXTERNAL_FEED_ENDPOINTS')) {
+        foreach ($key in @('ANTHROPIC_API_KEY', 'CLAUDE_CODE_TEST', 'CLOUD_ML_REGION', 'MY_CUSTOM_VAR')) {
             [Environment]::SetEnvironmentVariable($key, $null)
         }
     }
@@ -31,20 +30,6 @@ Describe 'Get-EnvironmentPassthroughArgs' {
 
             $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path'
             $result | Should -Contain 'CLOUD_ML_REGION'
-        }
-
-        It 'passes NUGET_ prefixed variables' {
-            [Environment]::SetEnvironmentVariable('NUGET_CREDENTIALPROVIDER_SESSIONTOKENCACHE_ENABLED', 'true')
-
-            $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path'
-            $result | Should -Contain 'NUGET_CREDENTIALPROVIDER_SESSIONTOKENCACHE_ENABLED'
-        }
-
-        It 'passes VSS_NUGET_ prefixed variables' {
-            [Environment]::SetEnvironmentVariable('VSS_NUGET_EXTERNAL_FEED_ENDPOINTS', '{"endpointCredentials":[]}')
-
-            $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path'
-            $result | Should -Contain 'VSS_NUGET_EXTERNAL_FEED_ENDPOINTS'
         }
 
         It 'does not pass unrelated environment variables' {
@@ -78,7 +63,7 @@ Describe 'Get-EnvironmentPassthroughArgs' {
             $envVarArgs = $result | Where-Object { $_ -ne '-e' -and $_ -notmatch 'DCLAUDE_HOST_PATH' }
             # Any remaining should only be matching prefixed vars from the actual environment
             foreach ($arg in $envVarArgs) {
-                $arg | Should -Match '^(ANTHROPIC_|CLAUDE_CODE_|CLOUD_ML_|NUGET_|VSS_NUGET_)'
+                $arg | Should -Match '^(ANTHROPIC_|CLAUDE_CODE_|CLOUD_ML_)'
             }
         }
     }

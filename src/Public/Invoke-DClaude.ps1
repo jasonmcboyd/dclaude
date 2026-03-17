@@ -94,6 +94,7 @@ function Invoke-DClaude {
     $imageTag = $null
     $imageVolumes = @()
     $imageKeyToResolve = $null
+    $imageName = $null
     switch ($PSCmdlet.ParameterSetName) {
         'ByImage' {
             $imageTag = $Image
@@ -112,6 +113,7 @@ function Invoke-DClaude {
     }
 
     if ($imageKeyToResolve) {
+        $imageName = $imageKeyToResolve
         $resolved = Resolve-ImageKey $imageKeyToResolve $containerOS
         if (-not $resolved) { return }
         $imageTag = $resolved.tag
@@ -156,6 +158,29 @@ function Invoke-DClaude {
 
     # Append environment variable passthrough
     $dockerArgs += Get-EnvironmentPassthroughArgs -HostPath $resolvedPath
+
+    # Mount init.d directories for user/project init scripts
+    $dclaudeUserDir = Join-Path $HOME '.dclaude'
+    $dclaudeProjectDir = Join-Path $resolvedPath '.dclaude'
+    $initBase = if ($containerOS -eq 'linux') { '/mnt/init.d' } else { 'C:/mnt/init.d' }
+
+    $initDirs = @(
+        @{ Host = Join-Path $dclaudeUserDir 'common.init.d'; Container = "$initBase/user-common" }
+    )
+    if ($imageName) {
+        $initDirs += @{ Host = Join-Path $dclaudeUserDir "$imageName.init.d"; Container = "$initBase/user-image" }
+    }
+    $initDirs += @{ Host = Join-Path $dclaudeProjectDir 'common.init.d'; Container = "$initBase/project-common" }
+    if ($imageName) {
+        $initDirs += @{ Host = Join-Path $dclaudeProjectDir "$imageName.init.d"; Container = "$initBase/project-image" }
+    }
+
+    foreach ($dir in $initDirs) {
+        if (Test-Path $dir.Host) {
+            $dockerArgs += '-v'
+            $dockerArgs += "$($dir.Host):$($dir.Container):ro"
+        }
+    }
 
     # Append Docker socket/pipe mount if requested
     if ($DockerAccess) {
