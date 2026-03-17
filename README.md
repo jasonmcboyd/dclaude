@@ -96,6 +96,7 @@ Defines named images and their per-platform volume mounts. Lives in your home di
 
 ```json
 {
+  "envPassthrough": ["AZURE_DEVOPS_PAT"],
   "images": {
     "pwsh": {
       "windows": {
@@ -108,11 +109,13 @@ Defines named images and their per-platform volume mounts. Lives in your home di
     },
     "dotnet-core": {
       "windows": {
-        "tag": "dclaude-dotnet-core:latest"
+        "tag": "dclaude-dotnet-core:latest",
+        "envPassthrough": ["NUGET_*", "VSS_NUGET_*"]
       },
       "linux": {
         "tag": "dclaude-dotnet-core-linux:latest",
-        "volumes": ["%HOME%/.nuget:/root/.nuget"]
+        "volumes": ["%HOME%/.nuget:/root/.nuget"],
+        "envPassthrough": ["NUGET_*"]
       }
     }
   }
@@ -127,6 +130,8 @@ Each key under `images` is an image name you can pass to `-ImageKey`. The value 
 | `images.<name>.linux` | No* | Linux platform configuration. |
 | `images.<name>.<platform>.tag` | Yes | Docker image tag to run. |
 | `images.<name>.<platform>.volumes` | No | Array of volume mounts in `host:container` format. Mounted read-only by default; append `:rw` to make writable. Environment variables are expanded at runtime via .NET's `ExpandEnvironmentVariables`. Use `%VAR%` syntax — this works cross-platform. |
+| `images.<name>.<platform>.envPassthrough` | No | Array of environment variable names or glob patterns (e.g. `NUGET_*`) to forward from the host into the container. Merged with global `envPassthrough`. |
+| `envPassthrough` | No | Top-level array of environment variable names or glob patterns forwarded to **all** images. `ANTHROPIC_*`, `CLAUDE_CODE_*`, and `CLOUD_ML_*` are always forwarded regardless of this setting. |
 
 *At least one platform must be defined per entry. `Invoke-DClaude` auto-detects the current Docker container OS and selects the matching platform.
 
@@ -317,7 +322,7 @@ dclaude's purpose is to move the trust boundary from Claude Code's permission sy
 | Concern | Host (no container) | dclaude |
 |---------|-------------------|---------|
 | Filesystem access | Full host filesystem | Only explicitly mounted paths |
-| Environment variables | All host env vars visible | Only `ANTHROPIC_*`, `CLAUDE_CODE_*`, `CLOUD_ML_*` forwarded |
+| Environment variables | All host env vars visible | `ANTHROPIC_*`, `CLAUDE_CODE_*`, `CLOUD_ML_*` always forwarded; additional patterns configurable via `envPassthrough` in user/image config |
 | Claude config (`~/.claude`) | Full read/write | Mounted read-write (same access, but contained) |
 | `.claude.json` sanitization | Host file used as-is | Host paths stripped, workspace pre-accepted |
 | Process isolation | None — runs as your user | Docker container boundary |

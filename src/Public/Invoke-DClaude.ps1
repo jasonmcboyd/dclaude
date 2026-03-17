@@ -90,9 +90,10 @@ function Invoke-DClaude {
     # Load project config
     $config = Get-DClaudeConfig -Path $resolvedPath
 
-    # Determine image tag and image-level volumes
+    # Determine image tag, image-level volumes, and env passthrough patterns
     $imageTag = $null
     $imageVolumes = @()
+    $imageEnvPassthrough = @()
     $imageKeyToResolve = $null
     $imageName = $null
     switch ($PSCmdlet.ParameterSetName) {
@@ -118,6 +119,7 @@ function Invoke-DClaude {
         if (-not $resolved) { return }
         $imageTag = $resolved.tag
         $imageVolumes = $resolved.volumes
+        $imageEnvPassthrough = $resolved.envPassthrough
     }
 
     if (-not $imageTag) {
@@ -156,8 +158,13 @@ function Invoke-DClaude {
     $volumeArgs = Get-VolumeArgs -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes
     $dockerArgs += $volumeArgs
 
-    # Append environment variable passthrough
-    $dockerArgs += Get-EnvironmentPassthroughArgs -HostPath $resolvedPath
+    # Append environment variable passthrough (global + image-level patterns)
+    $userConfig = Get-DClaudeUserConfig
+    $globalEnvPassthrough = if ($userConfig -and $userConfig.PSObject.Properties['envPassthrough']) {
+        @($userConfig.envPassthrough)
+    } else { @() }
+    $envPatterns = $globalEnvPassthrough + $imageEnvPassthrough
+    $dockerArgs += Get-EnvironmentPassthroughArgs -HostPath $resolvedPath -Patterns $envPatterns
 
     # Mount init.d directories for user/project init scripts
     $dclaudeUserDir = Join-Path $HOME '.dclaude'

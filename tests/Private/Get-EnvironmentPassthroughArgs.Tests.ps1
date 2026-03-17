@@ -5,37 +5,61 @@ BeforeAll {
 Describe 'Get-EnvironmentPassthroughArgs' {
 
     AfterEach {
-        foreach ($key in @('ANTHROPIC_API_KEY', 'CLAUDE_CODE_TEST', 'CLOUD_ML_REGION', 'MY_CUSTOM_VAR')) {
+        foreach ($key in @('ANTHROPIC_API_KEY', 'CLAUDE_CODE_TEST', 'CLOUD_ML_REGION',
+                'AZURE_DEVOPS_PAT', 'NUGET_TOKEN', 'MY_CUSTOM_VAR')) {
             [Environment]::SetEnvironmentVariable($key, $null)
         }
     }
 
-    Context 'prefix matching' {
-        It 'passes ANTHROPIC_ prefixed variables' {
+    Context 'built-in patterns' {
+        It 'always passes ANTHROPIC_ prefixed variables' {
             [Environment]::SetEnvironmentVariable('ANTHROPIC_API_KEY', 'test-key')
 
             $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path'
             $result | Should -Contain 'ANTHROPIC_API_KEY'
         }
 
-        It 'passes CLAUDE_CODE_ prefixed variables' {
+        It 'always passes CLAUDE_CODE_ prefixed variables' {
             [Environment]::SetEnvironmentVariable('CLAUDE_CODE_TEST', 'val')
 
             $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path'
             $result | Should -Contain 'CLAUDE_CODE_TEST'
         }
 
-        It 'passes CLOUD_ML_ prefixed variables' {
+        It 'always passes CLOUD_ML_ prefixed variables' {
             [Environment]::SetEnvironmentVariable('CLOUD_ML_REGION', 'us-east1')
 
             $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path'
             $result | Should -Contain 'CLOUD_ML_REGION'
         }
 
-        It 'does not pass unrelated environment variables' {
+        It 'does not pass unmatched variables without patterns' {
             [Environment]::SetEnvironmentVariable('MY_CUSTOM_VAR', 'secret')
 
             $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path'
+            $result | Should -Not -Contain 'MY_CUSTOM_VAR'
+        }
+    }
+
+    Context 'custom patterns' {
+        It 'passes exact name match' {
+            [Environment]::SetEnvironmentVariable('AZURE_DEVOPS_PAT', 'test-pat')
+
+            $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path' -Patterns @('AZURE_DEVOPS_PAT')
+            $result | Should -Contain 'AZURE_DEVOPS_PAT'
+        }
+
+        It 'passes glob pattern match' {
+            [Environment]::SetEnvironmentVariable('NUGET_TOKEN', 'abc')
+
+            $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path' -Patterns @('NUGET_*')
+            $result | Should -Contain 'NUGET_TOKEN'
+        }
+
+        It 'does not pass vars that do not match patterns' {
+            [Environment]::SetEnvironmentVariable('MY_CUSTOM_VAR', 'secret')
+
+            $result = Get-EnvironmentPassthroughArgs -HostPath '/some/path' -Patterns @('NUGET_*')
             $result | Should -Not -Contain 'MY_CUSTOM_VAR'
         }
     }
@@ -54,17 +78,10 @@ Describe 'Get-EnvironmentPassthroughArgs' {
         }
     }
 
-    Context 'when no matching env vars exist' {
-        It 'returns only DCLAUDE_HOST_PATH args' {
+    Context 'always includes DCLAUDE_HOST_PATH' {
+        It 'includes DCLAUDE_HOST_PATH even with no other user vars' {
             $result = Get-EnvironmentPassthroughArgs -HostPath '/path'
-            # Should have at least -e and DCLAUDE_HOST_PATH=...
-            $nonHostArgs = $result | Where-Object { $_ -notmatch 'DCLAUDE_HOST_PATH' -and $_ -ne '-e' }
-            # Filter to only args that are env var names (not -e flags)
-            $envVarArgs = $result | Where-Object { $_ -ne '-e' -and $_ -notmatch 'DCLAUDE_HOST_PATH' }
-            # Any remaining should only be matching prefixed vars from the actual environment
-            foreach ($arg in $envVarArgs) {
-                $arg | Should -Match '^(ANTHROPIC_|CLAUDE_CODE_|CLOUD_ML_)'
-            }
+            $result | Should -Contain 'DCLAUDE_HOST_PATH=/path'
         }
     }
 }
