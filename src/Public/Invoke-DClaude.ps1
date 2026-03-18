@@ -226,6 +226,20 @@ function Invoke-DClaude {
             Write-Host "  $($dockerArgs[$i + 1])" -ForegroundColor DarkGray
         }
     }
+
+    # Display environment variables being passed through
+    $envVars = @()
+    for ($i = 0; $i -lt $dockerArgs.Count; $i++) {
+        if ($dockerArgs[$i] -eq '-e' -and ($i + 1) -lt $dockerArgs.Count) {
+            $envVars += $dockerArgs[$i + 1]
+        }
+    }
+    if ($envVars.Count -gt 0) {
+        Write-Host "dclaude: environment variables:" -ForegroundColor DarkGray
+        foreach ($envVar in $envVars) {
+            Write-Host "  $envVar" -ForegroundColor DarkGray
+        }
+    }
     Write-Host ""
 
     # Launch the container
