@@ -6,6 +6,7 @@ BeforeAll {
     . "$PSScriptRoot/../../src/Private/Resolve-ImageKey.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DockerContainerOS.ps1"
     . "$PSScriptRoot/../../src/Private/Set-VolumeDefaultMode.ps1"
+    . "$PSScriptRoot/../../src/Private/ConvertTo-ContainerPath.ps1"
     . "$PSScriptRoot/../../src/Private/Resolve-ContainerPaths.ps1"
     . "$PSScriptRoot/../../src/Private/Get-VolumeArgs.ps1"
     . "$PSScriptRoot/../../src/Private/Get-EnvironmentPassthroughArgs.ps1"
@@ -151,13 +152,15 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'container path selection' {
-        It 'uses Windows paths when Docker OS is windows' {
+        It 'uses the host workspace path as container workspace on Windows' {
             Mock Get-DockerContainerOS { return 'windows' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*C:/workspace*'
+            # Workspace path should be the resolved host path (passthrough on Windows)
+            $resolvedWorkDir = (Resolve-Path $script:workDir).Path
+            $argsString | Should -BeLike "*$resolvedWorkDir*"
             $argsString | Should -BeLike '*C:/mnt/host-claude*'
         }
 
@@ -167,7 +170,10 @@ Describe 'Invoke-DClaude' {
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*/workspace*'
+            # Workspace should be derived from host path via ConvertTo-ContainerPath
+            $resolvedWorkDir = (Resolve-Path $script:workDir).Path
+            $expectedWorkspace = ConvertTo-ContainerPath -HostPath $resolvedWorkDir -ContainerOS 'linux'
+            $argsString | Should -BeLike "*$expectedWorkspace*"
             $argsString | Should -BeLike '*/mnt/host-claude*'
         }
 
@@ -177,7 +183,9 @@ Describe 'Invoke-DClaude' {
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*/workspace*'
+            $resolvedWorkDir = (Resolve-Path $script:workDir).Path
+            $expectedWorkspace = ConvertTo-ContainerPath -HostPath $resolvedWorkDir -ContainerOS 'linux'
+            $argsString | Should -BeLike "*$expectedWorkspace*"
         }
     }
 
@@ -186,7 +194,10 @@ Describe 'Invoke-DClaude' {
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -Match ":\S+workspace:rw"
+            $argsString | Should -Match ":rw"
+            # Verify the workspace volume spec contains the resolved host path and :rw
+            $resolvedWorkDir = (Resolve-Path $script:workDir).Path
+            $argsString | Should -BeLike "*${resolvedWorkDir}:*:rw*"
         }
     }
 
@@ -280,6 +291,30 @@ Describe 'Invoke-DClaude' {
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*DCLAUDE_HOST_PATH=*'
+        }
+
+        It 'always passes DCLAUDE_WORKSPACE with the container workspace path' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*DCLAUDE_WORKSPACE=*'
+
+            # The value should be the converted workspace path
+            $resolvedWorkDir = (Resolve-Path $script:workDir).Path
+            $expectedWorkspace = ConvertTo-ContainerPath -HostPath $resolvedWorkDir -ContainerOS 'linux'
+            $argsString | Should -BeLike "*DCLAUDE_WORKSPACE=$expectedWorkspace*"
+        }
+
+        It 'passes DCLAUDE_WORKSPACE with Windows path for Windows containers' {
+            Mock Get-DockerContainerOS { return 'windows' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $resolvedWorkDir = (Resolve-Path $script:workDir).Path
+            $argsString | Should -BeLike "*DCLAUDE_WORKSPACE=$resolvedWorkDir*"
         }
     }
 
@@ -410,8 +445,8 @@ Describe 'Invoke-DClaude' {
         }
     }
 
-    Context 'Linux ambient capabilities' {
-        It 'omits --security-opt=no-new-privileges for Linux (entrypoint sets it via setpriv)' {
+    Context 'security options' {
+        It 'omits --security-opt for Linux (entrypoint sets it via setpriv)' {
             Mock Get-DockerContainerOS { return 'linux' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
@@ -419,12 +454,12 @@ Describe 'Invoke-DClaude' {
             $script:capturedDockerArgs | Should -Not -Contain '--security-opt=no-new-privileges'
         }
 
-        It 'includes --security-opt=no-new-privileges for Windows containers' {
+        It 'omits --security-opt for Windows (not supported on Windows containers)' {
             Mock Get-DockerContainerOS { return 'windows' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
-            $script:capturedDockerArgs | Should -Contain '--security-opt=no-new-privileges'
+            $script:capturedDockerArgs | Should -Not -Contain '--security-opt=no-new-privileges'
         }
     }
 

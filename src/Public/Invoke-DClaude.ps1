@@ -171,6 +171,8 @@ function Invoke-DClaude {
     } else { @() }
     $envPatterns = $globalEnvPassthrough + $imageEnvPassthrough
     $dockerArgs += Get-EnvironmentPassthroughArgs -HostPath $resolvedPath -Patterns $envPatterns
+    $dockerArgs += '-e'
+    $dockerArgs += "DCLAUDE_WORKSPACE=$($paths.Workspace)"
 
     # Mount init.d directories for user/project init scripts
     $dclaudeUserDir = Join-Path $HOME '.dclaude'

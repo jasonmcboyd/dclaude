@@ -52,14 +52,11 @@ ENV DCLAUDE_CONTAINER=1
 # root when bind-mounting the project dir.
 RUN mkdir -p /home/claude/.claude
 
-# Trust mounted workspace to avoid "dubious ownership" errors
-RUN git config --global --add safe.directory /workspace
-
 # Switch to root for the entrypoint. It needs root to match UIDs and set ambient
 # capabilities (CAP_FOWNER + CAP_DAC_OVERRIDE), then drops to claude via setpriv
 # before launching Claude Code.
 USER root
 
-WORKDIR /workspace
+WORKDIR /home/claude
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -15,16 +15,18 @@ function Resolve-ContainerPaths {
     $errors = @()
     $dockerArgs = @()
 
-    # Set workspace and Claude config mount paths based on OS type
+    # Translate the host workspace path for the container's OS (e.g. Windows -> Linux)
+    # On same-platform, this is a no-op. On Windows->Linux, converts C:\... to /c/...
+    $workspace = ConvertTo-ContainerPath -HostPath $ResolvedPath -ContainerOS $ContainerOS
+
+    # Set Claude config mount path based on OS type
     if ($ContainerOS -eq 'windows') {
-        $workspace = 'C:/workspace'
         # Mount at a staging path, not directly at ~/.claude, so the entrypoint
         # can create symlinks on the local filesystem pointing into the mount.
         # (Windows containers cannot create reparse points inside bind mounts.)
         $claudeMount = 'C:/mnt/host-claude'
     }
     else {
-        $workspace = '/workspace'
         $claudeMount = '/mnt/host-claude'
     }
 
@@ -61,11 +63,13 @@ function Resolve-ContainerPaths {
     $hostKey = $ResolvedPath -replace '[/\\:]', '-'
     $hostProjectDir = Join-Path $ClaudeConfigPath 'projects' $hostKey
     if (Test-Path $hostProjectDir) {
+        # The container project key is derived from the container-side workspace path
+        $containerKey = $workspace -replace '[/\\:]', '-'
         if ($ContainerOS -eq 'windows') {
-            $containerProjectDir = 'C:/Users/ContainerAdministrator/.claude/projects/C--workspace'
+            $containerProjectDir = "C:/Users/ContainerAdministrator/.claude/projects/$containerKey"
         }
         else {
-            $containerProjectDir = '/home/claude/.claude/projects/-workspace'
+            $containerProjectDir = "/home/claude/.claude/projects/$containerKey"
         }
         $dockerArgs += '-v'
         $dockerArgs += "${hostProjectDir}:${containerProjectDir}"

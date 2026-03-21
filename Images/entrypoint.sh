@@ -6,11 +6,18 @@ HOST_JSON="/mnt/host-claude.json"
 CLAUDE_HOME="/home/claude/.claude"
 CLAUDE_JSON="/home/claude/.claude.json"
 
+# Workspace path: use host-path mount if provided, fall back to legacy /workspace
+WORKSPACE="${DCLAUDE_WORKSPACE:-/workspace}"
+
+# Trust the workspace directory to avoid "dubious ownership" errors from git.
+# This runs here instead of the Dockerfile because the workspace path is dynamic.
+git config --global --add safe.directory "$WORKSPACE"
+
 # --- Root detection and dynamic UID matching ---
 if [ "$(id -u)" = "0" ]; then
     # Match claude user's UID to the workspace file owner (for native Linux hosts).
     # On WSL2, workspace files appear as root-owned (UID 0) due to 9P mount — skip in that case.
-    ws_uid=$(stat -c '%u' /workspace 2>/dev/null || echo "1000")
+    ws_uid=$(stat -c '%u' "$WORKSPACE" 2>/dev/null || echo "1000")
     if [ "$ws_uid" != "0" ] && [ "$ws_uid" != "1000" ]; then
         echo "[dclaude] Matching claude UID to workspace owner ($ws_uid)" >&2
         usermod -u "$ws_uid" claude
@@ -64,7 +71,7 @@ cat > "$container_rules_dir/dclaude-context.md" << CONTEXT_EOF
 You are running inside a dclaude Docker container.
 
 ## Key Facts
-- The workspace at \`/workspace\` is mounted from the host path \`$host_path\`.
+- The workspace at \`$WORKSPACE\` is mounted from the host path \`$host_path\`.
 - Your home directory and .claude config are container-local, with select items symlinked to the host for persistence.
 - Paths referenced in CLAUDE.md or other instructions (e.g., project directories, repo paths) may refer to host-only locations that are not mounted in this container.
 
@@ -80,7 +87,7 @@ If a path mentioned in instructions or config does not exist in the container:
 
 | Host Path | Container Path | Mode |
 | --- | --- | --- |
-| \`$host_path\` | \`/workspace\` | read/write |
+| \`$host_path\` | \`$WORKSPACE\` | read/write |
 CONTEXT_EOF
 
 # Append additional volume mounts to the context file
@@ -121,7 +128,8 @@ fi
 # Link host conversation history so /resume finds conversations from the host.
 # The project dir may already be bind-mounted by Invoke-DClaude (preferred, since
 # bind mounts appear as real directories to readdir). Fall back to a symlink if not.
-project_target="$CLAUDE_HOME/projects/-workspace"
+container_key=$(printf '%s' "$WORKSPACE" | sed 's/[/\\:]/-/g')
+project_target="$CLAUDE_HOME/projects/$container_key"
 if [ -d "$project_target" ]; then
     # Already bind-mounted by the launcher — nothing to do.
     session_count=$(find "$project_target" -maxdepth 1 -name '*.jsonl' 2>/dev/null | wc -l)
@@ -144,15 +152,15 @@ fi
 if [ -f "$HOST_JSON" ]; then
     if ! node -e "
         const fs = require('fs');
-        const [hostJson, claudeJson] = process.argv.slice(1);
+        const [hostJson, claudeJson, workspace] = process.argv.slice(1);
         const cfg = JSON.parse(fs.readFileSync(hostJson, 'utf8'));
         delete cfg.projects;
         delete cfg.githubRepoPaths;
         cfg.officialMarketplaceAutoInstallAttempted = true;
         cfg.officialMarketplaceAutoInstalled = true;
-        cfg.projects = { '/workspace': { allowedTools: [], hasTrustDialogAccepted: true } };
+        cfg.projects = { [workspace]: { allowedTools: [], hasTrustDialogAccepted: true } };
         fs.writeFileSync(claudeJson, JSON.stringify(cfg, null, 2));
-    " "$HOST_JSON" "$CLAUDE_JSON"; then
+    " "$HOST_JSON" "$CLAUDE_JSON" "$WORKSPACE"; then
         echo "[dclaude] FATAL: Failed to sanitize .claude.json" >&2
         exit 1
     fi

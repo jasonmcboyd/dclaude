@@ -9,7 +9,7 @@ src/
   dclaude.psm1          # Module loader (dot-sources Private/ and Public/, registers alias)
   dclaude.psd1          # Module manifest
   Public/               # 7 exported functions
-  Private/              # 8 internal helper functions
+  Private/              # 9 internal helper functions
 Images/
   Dockerfile            # Windows container image
   Dockerfile.linux      # Linux container image (shared across pwsh, dotnet-core, etc.)
@@ -47,14 +47,20 @@ Merge is **shallow**: local replaces entire top-level properties from base.
 
 ### Container Mounting Strategy
 
-- Workspace → `/workspace` (Linux) or `C:/workspace` (Windows), read-write
+- Workspace → mounted at the **host path** (translated for cross-platform: `C:\Users\jason\repos` → `/c/Users/jason/repos` on Linux containers), read-write
 - `~/.claude` → `/mnt/host-claude` (staging path, not directly at `~/.claude`)
 - Entrypoint creates **symlinks** from container's `~/.claude/` into the staging mount
 - `projects` and `rules` directories are handled specially (not bulk-symlinked)
 
+The host-path mounting strategy ensures that Docker volume commands from inside the container (sibling containers) use paths that are valid on the host Docker daemon. The `DCLAUDE_WORKSPACE` environment variable tells the entrypoint the container-side workspace path; it falls back to `/workspace` (Linux) or `C:\workspace` (Windows) for backward compatibility.
+
+#### Cross-Platform Path Translation
+
+When running Linux containers on a Windows host, `ConvertTo-ContainerPath` translates Windows paths to the Docker Desktop `/c/...` convention (lowercase drive letter, forward slashes, no colon). This is the same format Docker Desktop uses internally for bind mounts.
+
 ### Project History for /resume
 
-Claude Code's `/resume` discovers sessions by scanning `~/.claude/projects/<key>/`. The project key inside a container is `-workspace` (Linux) or `C--workspace` (Windows).
+Claude Code's `/resume` discovers sessions by scanning `~/.claude/projects/<key>/`. The project key inside a container is derived from the container-side workspace path (which now matches the translated host path).
 
 The launcher (`Invoke-DClaude`) **bind-mounts** the host project directory directly at the container's project path. This is required because Claude Code's multi-worktree resume uses `readdir` with `{withFileTypes: true}`, which returns `isDirectory()=false` for symlinks. Bind mounts appear as real directories.
 
@@ -62,13 +68,13 @@ The entrypoint detects the existing bind mount and falls back to a symlink only 
 
 ### Project Key Derivation
 
-The project key is derived from the host workspace path by replacing all `/`, `\`, and `:` characters with `-`. This algorithm is used in three places and must stay in sync:
+The project key is derived from the workspace path by replacing all `/`, `\`, and `:` characters with `-`. This algorithm is used in three places and must stay in sync:
 
-1. **Launcher** (`Invoke-DClaude.ps1`): `$hostKey = $resolvedPath -replace '[/\\:]', '-'`
-2. **Linux entrypoint** (`entrypoint.sh`): `host_key=$(printf '%s' "$DCLAUDE_HOST_PATH" | sed 's/[/\\:]/-/g')`
-3. **Windows entrypoint** (`entrypoint.ps1`): `$hostKey = $hostPath -replace '[/\\:]', '-'`
+1. **Launcher** (`Resolve-ContainerPaths.ps1`): `$containerKey = $workspace -replace '[/\\:]', '-'`
+2. **Linux entrypoint** (`entrypoint.sh`): `container_key=$(printf '%s' "$WORKSPACE" | sed 's/[/\\:]/-/g')`
+3. **Windows entrypoint** (`entrypoint.ps1`): `$containerKey = $Workspace -replace '[/\\:]', '-'`
 
-Inside a container, the project key is always `-workspace` (Linux) or `C--workspace` (Windows) since the workspace is mounted at `/workspace` or `C:/workspace`.
+The host-side key (for locating the project dir on the host) is derived from the original host path. The container-side key is derived from the translated workspace path.
 
 ### Entrypoints
 

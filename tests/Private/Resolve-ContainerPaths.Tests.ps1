@@ -1,4 +1,5 @@
 BeforeAll {
+    . "$PSScriptRoot/../../src/Private/ConvertTo-ContainerPath.ps1"
     . "$PSScriptRoot/../../src/Private/Resolve-ContainerPaths.ps1"
 }
 
@@ -13,18 +14,33 @@ Describe 'Resolve-ContainerPaths' {
     }
 
     Context 'container path selection' {
-        It 'returns Windows paths when ContainerOS is windows' {
+        It 'converts the resolved path via ConvertTo-ContainerPath for the workspace' {
             Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
 
             $result = Resolve-ContainerPaths -ContainerOS 'windows' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
-            $result.Workspace | Should -Be 'C:/workspace'
+            # On Windows containers, the path is passed through unchanged
+            $expectedWorkspace = ConvertTo-ContainerPath -HostPath $TestDrive -ContainerOS 'windows'
+            $result.Workspace | Should -Be $expectedWorkspace
             $result.ClaudeMount | Should -Be 'C:/mnt/host-claude'
         }
 
-        It 'returns Linux paths when ContainerOS is linux' {
+        It 'returns Linux-converted paths when ContainerOS is linux' {
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
-            $result.Workspace | Should -Be '/workspace'
+            $expectedWorkspace = ConvertTo-ContainerPath -HostPath $TestDrive -ContainerOS 'linux'
+            $result.Workspace | Should -Be $expectedWorkspace
             $result.ClaudeMount | Should -Be '/mnt/host-claude'
+        }
+
+        It 'converts a Windows-style resolved path to Linux container path' {
+            # Simulate a Windows host path being passed as ResolvedPath
+            # ConvertTo-ContainerPath should translate C:\Users\... to /c/Users/...
+            Mock Test-Path { $true }
+            Mock Get-Item { [PSCustomObject]@{ Target = $null } } -ParameterFilter { $Path -like '*.claude.json' }
+
+            # Use a path that looks like a Windows path
+            $windowsPath = 'C:\Users\jason\repos\myproject'
+            $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $windowsPath -ClaudeConfigPath $script:claudeDir
+            $result.Workspace | Should -Be '/c/Users/jason/repos/myproject'
         }
     }
 
@@ -72,17 +88,21 @@ Describe 'Resolve-ContainerPaths' {
     }
 
     Context 'project directory bind-mount' {
-        It 'adds volume arg when host project dir exists on Linux' {
+        It 'derives container key from converted workspace path on Linux' {
             $hostKey = $TestDrive -replace '[/\\:]', '-'
             $projectDir = Join-Path $script:claudeDir 'projects' $hostKey
             New-Item -Path $projectDir -ItemType Directory -Force | Out-Null
 
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
+
+            # Container key is derived from the converted workspace path, not the raw resolved path
+            $convertedWorkspace = ConvertTo-ContainerPath -HostPath $TestDrive -ContainerOS 'linux'
+            $expectedContainerKey = $convertedWorkspace -replace '[/\\:]', '-'
             $argsString = $result.DockerArgs -join ' '
-            $argsString | Should -BeLike '*:/home/claude/.claude/projects/-workspace*'
+            $argsString | Should -BeLike "*:/home/claude/.claude/projects/$expectedContainerKey*"
         }
 
-        It 'adds volume arg when host project dir exists on Windows' {
+        It 'derives container key from workspace path on Windows' {
             Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
 
             $hostKey = $TestDrive -replace '[/\\:]', '-'
@@ -90,8 +110,30 @@ Describe 'Resolve-ContainerPaths' {
             New-Item -Path $projectDir -ItemType Directory -Force | Out-Null
 
             $result = Resolve-ContainerPaths -ContainerOS 'windows' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
+
+            # On Windows containers, workspace is unchanged so key matches
+            $convertedWorkspace = ConvertTo-ContainerPath -HostPath $TestDrive -ContainerOS 'windows'
+            $expectedContainerKey = $convertedWorkspace -replace '[/\\:]', '-'
             $argsString = $result.DockerArgs -join ' '
-            $argsString | Should -BeLike '*:C:/Users/ContainerAdministrator/.claude/projects/C--workspace*'
+            $argsString | Should -BeLike "*:C:/Users/ContainerAdministrator/.claude/projects/$expectedContainerKey*"
+        }
+
+        It 'uses cross-platform converted path for container key when Windows path targets Linux container' {
+            # Simulate a Windows-style host path with the project dir existing
+            Mock Test-Path { $true }
+            Mock Get-Item { [PSCustomObject]@{ Target = $null } } -ParameterFilter { $Path -like '*.claude.json' }
+
+            $windowsPath = 'C:\Users\jason\repos'
+            $hostKey = $windowsPath -replace '[/\\:]', '-'
+            $projectDir = Join-Path $script:claudeDir 'projects' $hostKey
+            New-Item -Path $projectDir -ItemType Directory -Force | Out-Null
+
+            $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $windowsPath -ClaudeConfigPath $script:claudeDir
+
+            # Container workspace is /c/Users/jason/repos, container key is -c-Users-jason-repos
+            $expectedContainerKey = '/c/Users/jason/repos' -replace '[/\\:]', '-'
+            $argsString = $result.DockerArgs -join ' '
+            $argsString | Should -BeLike "*:/home/claude/.claude/projects/$expectedContainerKey*"
         }
 
         It 'does not add project volume when host project dir does not exist' {
@@ -101,7 +143,7 @@ Describe 'Resolve-ContainerPaths' {
 
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $otherDir -ClaudeConfigPath $script:claudeDir
             $argsString = $result.DockerArgs -join ' '
-            $argsString | Should -Not -BeLike '*projects/-workspace*'
+            $argsString | Should -Not -BeLike '*projects/*'
         }
     }
 

@@ -6,6 +6,13 @@ $hostDir = 'C:\mnt\host-claude'
 $claudeDir = "$env:USERPROFILE\.claude"
 $claudeJson = "$env:USERPROFILE\.claude.json"
 
+# Workspace path: use host-path mount if provided, fall back to legacy C:\workspace
+$Workspace = if ($env:DCLAUDE_WORKSPACE) { $env:DCLAUDE_WORKSPACE } else { 'C:\workspace' }
+
+# Trust the workspace directory to avoid "dubious ownership" errors from git.
+# This runs here instead of the Dockerfile because the workspace path is dynamic.
+git config --global --add safe.directory ($Workspace -replace '\\', '/')
+
 # Selectively link from the host .claude directory.
 # Symlink dirs and files so writes (e.g. OAuth token refresh) persist to host.
 if (Test-Path $hostDir) {
@@ -51,7 +58,7 @@ $contextLines = @(
     'You are running inside a dclaude Docker container.'
     ''
     '## Key Facts'
-    "- The workspace at ``C:\workspace`` is mounted from the host path ``$hostPath``."
+    "- The workspace at ``$Workspace`` is mounted from the host path ``$hostPath``."
     '- Your home directory and .claude config are container-local, with select items symlinked to the host for persistence.'
     '- Paths referenced in CLAUDE.md or other instructions (e.g., project directories, repo paths) may refer to host-only locations that are not mounted in this container.'
     ''
@@ -67,7 +74,7 @@ $contextLines = @(
     ''
     "| Host Path | Container Path | Mode |"
     "| --- | --- | --- |"
-    "| ``$hostPath`` | ``C:\workspace`` | read/write |"
+    "| ``$hostPath`` | ``$Workspace`` | read/write |"
 )
 
 $volumes = $env:DCLAUDE_VOLUMES
@@ -125,8 +132,10 @@ if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
     $cfg | Add-Member -MemberType NoteProperty -Name 'officialMarketplaceAutoInstallAttempted' -Value $true -Force
     $cfg | Add-Member -MemberType NoteProperty -Name 'officialMarketplaceAutoInstalled' -Value $true -Force
 
+    # Pre-accept the workspace path (use forward slashes for consistency with Claude Code)
+    $workspaceKey = $Workspace -replace '\\', '/'
     $cfg | Add-Member -MemberType NoteProperty -Name 'projects' -Value ([PSCustomObject]@{
-        'C:/workspace' = [PSCustomObject]@{
+        $workspaceKey = [PSCustomObject]@{
             allowedTools = @()
             hasTrustDialogAccepted = $true
         }
@@ -138,7 +147,9 @@ if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
 # Link host conversation history so /resume finds conversations from the host.
 # The project dir may already be bind-mounted by Invoke-DClaude (preferred, since
 # bind mounts appear as real directories to readdir). Fall back to a symlink if not.
-$projectTarget = "$claudeDir\projects\C--workspace"
+# Derive the container project key from the workspace path
+$containerKey = $Workspace -replace '[/\\:]', '-'
+$projectTarget = "$claudeDir\projects\$containerKey"
 if (Test-Path $projectTarget) {
     # Already bind-mounted by the launcher — nothing to do.
     $sessionCount = @(Get-ChildItem $projectTarget -Filter '*.jsonl' -ErrorAction SilentlyContinue).Count
@@ -156,7 +167,7 @@ else {
 
         $containerProjectsDir = "$claudeDir\projects"
         New-Item -ItemType Directory -Path $containerProjectsDir -Force | Out-Null
-        New-Item -ItemType SymbolicLink -Path "$containerProjectsDir\C--workspace" -Target $hostProjectDir -Force | Out-Null
+        New-Item -ItemType SymbolicLink -Path "$containerProjectsDir\$containerKey" -Target $hostProjectDir -Force | Out-Null
         $sessionCount = @(Get-ChildItem $hostProjectDir -Filter '*.jsonl' -ErrorAction SilentlyContinue).Count
         Write-Host "[dclaude] Linked $sessionCount session(s) from $hostProjectDir" -ForegroundColor DarkGray
     }

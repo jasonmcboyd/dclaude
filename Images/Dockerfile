@@ -21,9 +21,6 @@ RUN curl -sLo node.zip https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSI
     setx /M PATH "C:\nodejs;%PATH%" && `
     C:\nodejs\npm install -g @anthropic-ai/claude-code
 
-# Trust mounted workspace to avoid "dubious ownership" errors
-RUN git config --global --add safe.directory C:/workspace
-
 # Entrypoint script symlinks .claude.json from the mounted config directory
 COPY entrypoint.ps1 C:\entrypoint.ps1
 
@@ -33,6 +30,6 @@ ENV DCLAUDE_CONTAINER=1
 # permissions when bind-mounting the project dir underneath it.
 RUN mkdir "%USERPROFILE%\.claude"
 
-WORKDIR C:\workspace
+WORKDIR C:\Users\ContainerAdministrator
 
 ENTRYPOINT ["powershell", "-NoProfile", "-File", "C:\\entrypoint.ps1"]
