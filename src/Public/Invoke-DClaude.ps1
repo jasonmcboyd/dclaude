@@ -71,6 +71,12 @@ function Invoke-DClaude {
         [switch]$DockerAccess
     )
 
+    # Intercept --help / -h when it's the only remaining argument
+    if ($ClaudeArgs -and $ClaudeArgs.Count -eq 1 -and $ClaudeArgs[0] -in @('--help', '-h')) {
+        Get-Help $MyInvocation.MyCommand -Full
+        return
+    }
+
     # Validate Docker environment and detect container OS
     $containerOS = Get-DockerContainerOS
     if (-not $containerOS) { return }

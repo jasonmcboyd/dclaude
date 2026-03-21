@@ -478,4 +478,31 @@ Describe 'Invoke-DClaude' {
             Should -Not -Invoke docker
         }
     }
+
+    Context 'help flag interception' {
+        BeforeEach {
+            Mock Get-Help { }
+        }
+
+        It 'shows dclaude help and does not call docker when ClaudeArgs is --help' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ClaudeArgs '--help'
+
+            Should -Invoke Get-Help -ParameterFilter { $Name -eq 'Invoke-DClaude' }
+            Should -Not -Invoke docker
+        }
+
+        It 'shows dclaude help and does not call docker when ClaudeArgs is -h' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ClaudeArgs '-h'
+
+            Should -Invoke Get-Help -ParameterFilter { $Name -eq 'Invoke-DClaude' }
+            Should -Not -Invoke docker
+        }
+
+        It 'passes args through to claude normally when --help appears with other arguments' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ClaudeArgs '--help', '--resume'
+
+            Should -Not -Invoke Get-Help
+            Should -Invoke docker
+        }
+    }
 }
