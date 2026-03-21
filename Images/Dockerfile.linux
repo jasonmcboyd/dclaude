@@ -35,6 +35,14 @@ RUN ARCH=$(uname -m) && \
     curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VERSION}.tgz" \
         | tar -xz --strip-components=1 -C /usr/local/bin docker/docker
 
+# Install Docker Compose CLI plugin (for docker compose v2 support)
+ARG COMPOSE_VERSION=2.33.1
+RUN ARCH=$(uname -m) && \
+    mkdir -p /usr/local/lib/docker/cli-plugins && \
+    curl -fsSL "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-${ARCH}" \
+        -o /usr/local/lib/docker/cli-plugins/docker-compose && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+
 # Install Claude Code globally
 RUN npm install -g @anthropic-ai/claude-code
 

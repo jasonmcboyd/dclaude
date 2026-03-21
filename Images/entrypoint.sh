@@ -108,6 +108,16 @@ if [ -n "$DCLAUDE_VOLUMES" ]; then
     done
 fi
 
+# Append Docker access context if the socket is mounted
+if [ -S /var/run/docker.sock ]; then
+    cat >> "$container_rules_dir/dclaude-context.md" << 'DOCKER_EOF'
+
+## Docker Access
+
+The Docker socket is mounted into this container. You have access to the `docker` CLI and can build images, run containers, and manage Docker resources on the host. The containers you launch are **sibling containers** (not nested) — they run alongside this container on the same Docker daemon.
+DOCKER_EOF
+fi
+
 # Link host conversation history so /resume finds conversations from the host.
 # The project dir may already be bind-mounted by Invoke-DClaude (preferred, since
 # bind mounts appear as real directories to readdir). Fall back to a symlink if not.

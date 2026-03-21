@@ -98,6 +98,14 @@ if ($volumes) {
     }
 }
 
+# Append Docker access context if the named pipe is mounted
+if (Test-Path '//./pipe/docker_engine') {
+    $contextLines += ''
+    $contextLines += '## Docker Access'
+    $contextLines += ''
+    $contextLines += 'The Docker named pipe is mounted into this container. You have access to the `docker` CLI and can build images, run containers, and manage Docker resources on the host. The containers you launch are **sibling containers** (not nested) — they run alongside this container on the same Docker daemon.'
+}
+
 $contextLines -join "`n" | Set-Content "$containerRulesDir\dclaude-context.md" -Encoding UTF8
 
 # Sanitize .claude.json — strip Windows paths and pre-accept container workspace
