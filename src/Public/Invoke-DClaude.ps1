@@ -196,22 +196,14 @@ function Invoke-DClaude {
     }
 
     # Append Docker socket/pipe mount if requested
+    # No pre-existence check: Docker Desktop resolves socket/pipe paths internally,
+    # so Test-Path may fail on the host (e.g. WSL) even when the mount works fine.
     if ($DockerAccess) {
         if ($containerOS -eq 'linux') {
-            $socketPath = '/var/run/docker.sock'
-            if (-not (Test-Path -Path $socketPath)) {
-                Write-Error "Docker socket not found at '$socketPath'. Is Docker running?"
-                return
-            }
             $dockerArgs += '-v'
             $dockerArgs += '/var/run/docker.sock:/var/run/docker.sock:rw'
         }
         else {
-            $pipePath = '//./pipe/docker_engine'
-            if (-not (Test-Path -Path $pipePath)) {
-                Write-Error "Docker named pipe not found at '$pipePath'. Is Docker running?"
-                return
-            }
             $dockerArgs += '-v'
             $dockerArgs += '//./pipe/docker_engine://./pipe/docker_engine'
         }

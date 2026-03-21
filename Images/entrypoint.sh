@@ -161,6 +161,17 @@ done
 
 # --- Privilege drop (when running as root) or direct exec ---
 if [ "$(id -u)" = "0" ]; then
+    # If the Docker socket is mounted, add claude to a group matching its GID
+    # so the unprivileged user can talk to the Docker daemon.
+    if [ -S /var/run/docker.sock ]; then
+        sock_gid=$(stat -c '%g' /var/run/docker.sock)
+        if ! getent group "$sock_gid" > /dev/null 2>&1; then
+            groupadd -g "$sock_gid" docker-host
+        fi
+        usermod -aG "$sock_gid" claude
+        echo "[dclaude] Added claude to docker group (GID $sock_gid)" >&2
+    fi
+
     # Fix ownership of home dir (entrypoint ran as root, may have created files as root)
     chown -Rh claude:claude /home/claude
 

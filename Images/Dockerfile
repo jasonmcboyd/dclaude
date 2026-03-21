@@ -21,6 +21,13 @@ RUN curl -sLo node.zip https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSI
     setx /M PATH "C:\nodejs;%PATH%" && `
     C:\nodejs\npm install -g @anthropic-ai/claude-code
 
+# Install Docker CLI (for -DockerAccess support)
+ARG DOCKER_VERSION=27.5.1
+RUN curl -sLo docker.zip https://download.docker.com/win/static/stable/x86_64/docker-%DOCKER_VERSION%.zip && `
+    tar -xf docker.zip -C C:\ && `
+    setx /M PATH "C:\docker;%PATH%" && `
+    del docker.zip
+
 # Trust mounted workspace to avoid "dubious ownership" errors
 RUN git config --global --add safe.directory C:/workspace
 
