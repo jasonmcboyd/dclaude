@@ -21,19 +21,6 @@ RUN curl -sLo node.zip https://nodejs.org/dist/v%NODE_VERSION%/node-v%NODE_VERSI
     setx /M PATH "C:\nodejs;%PATH%" && `
     C:\nodejs\npm install -g @anthropic-ai/claude-code
 
-# Install Docker CLI (for -DockerAccess support)
-ARG DOCKER_VERSION=27.5.1
-RUN curl -sLo docker.zip https://download.docker.com/win/static/stable/x86_64/docker-%DOCKER_VERSION%.zip && `
-    tar -xf docker.zip -C C:\ && `
-    setx /M PATH "C:\docker;%PATH%" && `
-    del docker.zip
-
-# Install Docker Compose CLI plugin (for docker compose v2 support)
-ARG COMPOSE_VERSION=2.33.1
-RUN mkdir "C:\docker\cli-plugins" && `
-    curl -sLo "C:\docker\cli-plugins\docker-compose.exe" `
-        "https://github.com/docker/compose/releases/download/v%COMPOSE_VERSION%/docker-compose-windows-x86_64.exe"
-
 # Trust mounted workspace to avoid "dubious ownership" errors
 RUN git config --global --add safe.directory C:/workspace
 

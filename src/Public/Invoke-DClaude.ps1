@@ -195,10 +195,11 @@ function Invoke-DClaude {
         }
     }
 
-    # Append Docker socket/pipe mount if requested
-    # No pre-existence check: Docker Desktop resolves socket/pipe paths internally,
+    # Append Docker socket/pipe mount and CLI volume if requested.
+    # No pre-existence check on the socket: Docker Desktop resolves paths internally,
     # so Test-Path may fail on the host (e.g. WSL) even when the mount works fine.
     if ($DockerAccess) {
+        # Mount the Docker socket (Linux) or named pipe (Windows)
         if ($containerOS -eq 'linux') {
             $dockerArgs += '-v'
             $dockerArgs += '/var/run/docker.sock:/var/run/docker.sock:rw'
@@ -207,6 +208,40 @@ function Invoke-DClaude {
             $dockerArgs += '-v'
             $dockerArgs += '//./pipe/docker_engine://./pipe/docker_engine'
         }
+
+        # Ensure the Docker CLI volume exists and is populated, then mount it.
+        # The volume persists across container runs so this only downloads once.
+        # Check for the actual binary, not just the volume — Docker auto-creates
+        # empty volumes on first mount, so volume existence doesn't mean populated.
+        $cliVolume = "dclaude-docker-cli-$containerOS"
+        $cliMountPath = if ($containerOS -eq 'linux') { '/opt/docker-cli' } else { 'C:/docker-cli' }
+        if ($containerOS -eq 'linux') {
+            $volumePopulated = docker run --rm -v "${cliVolume}:/check" alpine test -f /check/docker 2>$null
+            $volumePopulated = ($LASTEXITCODE -eq 0)
+        }
+        else {
+            $volumePopulated = docker run --rm -v "${cliVolume}:C:\check" mcr.microsoft.com/windows/nanoserver:ltsc2022 cmd /c "if exist C:\check\docker.exe (exit 0) else (exit 1)" 2>$null
+            $volumePopulated = ($LASTEXITCODE -eq 0)
+        }
+        if (-not $volumePopulated) {
+            Write-Host "dclaude: provisioning Docker CLI volume ($cliVolume)..." -ForegroundColor DarkGray
+            if ($containerOS -eq 'linux') {
+                $script = @'
+apk add --no-cache curl >/dev/null 2>&1 && ARCH=$(uname -m) && curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | tar -xz --strip-components=1 -C /out docker/docker && mkdir -p /out/cli-plugins && curl -fsSL -o /out/cli-plugins/docker-compose "https://github.com/docker/compose/releases/download/v2.33.1/docker-compose-linux-${ARCH}" && chmod +x /out/cli-plugins/docker-compose
+'@
+                docker run --rm -v "${cliVolume}:/out" alpine:latest sh -c $script
+            }
+            else {
+                $script = 'curl -sLo docker.zip https://download.docker.com/win/static/stable/x86_64/docker-27.5.1.zip && tar -xf docker.zip --strip-components=1 -C C:\out docker\docker.exe && del docker.zip && mkdir C:\out\cli-plugins && curl -sLo C:\out\cli-plugins\docker-compose.exe https://github.com/docker/compose/releases/download/v2.33.1/docker-compose-windows-x86_64.exe'
+                docker run --rm -v "${cliVolume}:C:\out" mcr.microsoft.com/windows/servercore:ltsc2022 cmd /c $script
+            }
+            if ($LASTEXITCODE -ne 0) {
+                Write-Error "Failed to provision Docker CLI volume. Check network connectivity."
+                return
+            }
+        }
+        $dockerArgs += '-v'
+        $dockerArgs += "${cliVolume}:${cliMountPath}:ro"
     }
 
     # Add image tag

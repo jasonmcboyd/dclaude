@@ -429,22 +429,39 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'Docker access' {
-        It 'mounts Docker socket on Linux when -DockerAccess is specified' {
+        BeforeEach {
+            # Override docker mock: simulate populated volume for the check container,
+            # capture args for the actual container launch.
+            Mock docker {
+                $joined = $args -join ' '
+                # Population check: 'docker run --rm -v dclaude-docker-cli-*:/check alpine test -f /check/docker'
+                # or Windows equivalent. Set LASTEXITCODE=0 to indicate volume is populated.
+                if ($args[0] -eq 'run' -and ($joined -match ':/check' -or $joined -match ':C:\\check')) {
+                    $global:LASTEXITCODE = 0
+                    return
+                }
+                $script:capturedDockerArgs = $args
+            }
+        }
+
+        It 'mounts Docker socket and CLI volume on Linux when -DockerAccess is specified' {
             Mock Get-DockerContainerOS { return 'linux' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*/var/run/docker.sock:/var/run/docker.sock:rw*'
+            $argsString | Should -BeLike '*dclaude-docker-cli-linux:/opt/docker-cli:ro*'
         }
 
-        It 'mounts Docker named pipe on Windows when -DockerAccess is specified' {
+        It 'mounts Docker named pipe and CLI volume on Windows when -DockerAccess is specified' {
             Mock Get-DockerContainerOS { return 'windows' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*//./pipe/docker_engine://./pipe/docker_engine*'
+            $argsString | Should -BeLike '*dclaude-docker-cli-windows:C:/docker-cli:ro*'
         }
 
         It 'does not mount Docker socket when -DockerAccess is not specified' {
@@ -454,6 +471,7 @@ Describe 'Invoke-DClaude' {
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -Not -BeLike '*docker.sock*'
+            $argsString | Should -Not -BeLike '*docker-cli*'
         }
     }
 

@@ -169,6 +169,18 @@ for init_dir in "$INIT_BASE/user-common" "$INIT_BASE/user-image" "$INIT_BASE/pro
     done
 done
 
+# Link Docker CLI from the provisioned volume (mounted by -DockerAccess),
+# but only if the image doesn't already have docker installed.
+if ! command -v docker > /dev/null 2>&1 && [ -x /opt/docker-cli/docker ]; then
+    ln -sf /opt/docker-cli/docker /usr/local/bin/docker
+    if [ -d /opt/docker-cli/cli-plugins ]; then
+        mkdir -p /usr/local/lib/docker/cli-plugins
+        for plugin in /opt/docker-cli/cli-plugins/*; do
+            [ -f "$plugin" ] && ln -sf "$plugin" /usr/local/lib/docker/cli-plugins/
+        done
+    fi
+fi
+
 # --- Privilege drop (when running as root) or direct exec ---
 if [ "$(id -u)" = "0" ]; then
     # If the Docker socket is mounted, add claude to a group matching its GID

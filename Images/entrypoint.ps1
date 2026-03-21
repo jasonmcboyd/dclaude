@@ -171,6 +171,22 @@ catch {
     exit 1
 }
 
+# Link Docker CLI from the provisioned volume (mounted by -DockerAccess),
+# but only if the image doesn't already have docker installed.
+$dockerCliPath = 'C:\docker-cli'
+if (-not (Get-Command docker -ErrorAction SilentlyContinue) -and (Test-Path "$dockerCliPath\docker.exe")) {
+    $env:PATH = "$dockerCliPath;$env:PATH"
+    # Docker discovers plugins in ~/.docker/cli-plugins/ — symlink them there
+    $pluginsSrc = "$dockerCliPath\cli-plugins"
+    if (Test-Path $pluginsSrc) {
+        $pluginsDst = "$env:USERPROFILE\.docker\cli-plugins"
+        New-Item -ItemType Directory -Path $pluginsDst -Force | Out-Null
+        Get-ChildItem $pluginsSrc -File | ForEach-Object {
+            New-Item -ItemType SymbolicLink -Path "$pluginsDst\$($_.Name)" -Target $_.FullName -Force | Out-Null
+        }
+    }
+}
+
 # Run init scripts (user common → user image → project common → project image)
 $initBase = 'C:\mnt\init.d'
 foreach ($initDir in @("$initBase\user-common", "$initBase\user-image", "$initBase\project-common", "$initBase\project-image")) {
