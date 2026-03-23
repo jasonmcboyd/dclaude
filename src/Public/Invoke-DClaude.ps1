@@ -234,7 +234,7 @@ apk add --no-cache curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x
                 docker run --rm -v "${cliVolume}:/out" alpine:latest sh -c $script
             }
             else {
-                $script = 'curl -sLo docker.zip https://download.docker.com/win/static/stable/x86_64/docker-27.5.1.zip && tar -xf docker.zip --strip-components=1 -C C:\out docker\docker.exe && del docker.zip && mkdir C:\out\cli-plugins && curl -sLo C:\out\cli-plugins\docker-compose.exe https://github.com/docker/compose/releases/download/v2.33.1/docker-compose-windows-x86_64.exe && curl -sLo C:\out\cli-plugins\docker-buildx.exe https://github.com/docker/buildx/releases/download/v0.21.1/buildx-v0.21.1.windows-amd64.exe'
+                $script = 'curl -sLo docker.zip https://download.docker.com/win/static/stable/x86_64/docker-27.5.1.zip && tar -xf docker.zip --strip-components=1 -C C:\out docker/docker.exe && del docker.zip && mkdir C:\out\cli-plugins && curl -sLo C:\out\cli-plugins\docker-compose.exe https://github.com/docker/compose/releases/download/v2.33.1/docker-compose-windows-x86_64.exe && curl -sLo C:\out\cli-plugins\docker-buildx.exe https://github.com/docker/buildx/releases/download/v0.21.1/buildx-v0.21.1.windows-amd64.exe'
                 docker run --rm -v "${cliVolume}:C:\out" mcr.microsoft.com/windows/servercore:ltsc2022 cmd /c $script
             }
             if ($LASTEXITCODE -ne 0) {
