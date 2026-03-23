@@ -12,7 +12,7 @@
     parameter, project config image, project config imageKey.
 
 .PARAMETER Image
-    Docker image tag to use directly (e.g. 'dclaude-pwsh:latest').
+    Docker image tag to use directly (e.g. 'python:3.12-slim').
 
 .PARAMETER ImageKey
     Key referencing an image registered in ~/.dclaude/settings.json.
@@ -31,9 +31,9 @@
     allowing Claude to run Docker commands. Requires Docker to be accessible on the host.
 
 .EXAMPLE
-    Invoke-DClaude -Image 'dclaude-pwsh:latest'
+    Invoke-DClaude -Image 'python:3.12-slim'
 
-    Runs Claude Code using the specified image with the current directory mounted.
+    Runs Claude Code using a stock Python image with the current directory mounted.
 
 .EXAMPLE
     Invoke-DClaude -ImageKey 'pwsh' -Path C:\repos\my-project
@@ -96,10 +96,11 @@ function Invoke-DClaude {
     # Load project config
     $config = Get-DClaudeConfig -Path $resolvedPath
 
-    # Determine image tag, image-level volumes, and env passthrough patterns
+    # Determine image tag, image-level volumes, env passthrough patterns, and env constants
     $imageTag = $null
     $imageVolumes = @()
     $imageEnvPassthrough = @()
+    $imageEnv = $null
     $imageKeyToResolve = $null
     $imageName = $null
     switch ($PSCmdlet.ParameterSetName) {
@@ -126,6 +127,7 @@ function Invoke-DClaude {
         $imageTag = $resolved.tag
         $imageVolumes = $resolved.volumes
         $imageEnvPassthrough = $resolved.envPassthrough
+        $imageEnv = $resolved.env
     }
 
     if (-not $imageTag) {
@@ -142,6 +144,30 @@ function Invoke-DClaude {
         return
     }
 
+    # Read module version for runtime volume naming
+    $moduleVersion = $MyInvocation.MyCommand.Module.Version
+    if (-not $moduleVersion) {
+        # Fallback: read from .psd1 when running outside a loaded module (e.g. dot-sourced)
+        $psdPath = Join-Path (Split-Path $PSScriptRoot) 'dclaude.psd1'
+        if (Test-Path $psdPath) {
+            $psdContent = Import-PowerShellDataFile $psdPath
+            $moduleVersion = [version]$psdContent.ModuleVersion
+        }
+        else {
+            $moduleVersion = [version]'0.0.0'
+        }
+    }
+
+    # Clean up stale runtime volumes from previous module versions
+    Remove-StaleRuntimeVolumes -CurrentVersion $moduleVersion
+
+    # Provision runtime volume (Node.js + Claude Code)
+    $runtime = Initialize-RuntimeVolume -ContainerOS $containerOS -Version $moduleVersion
+    if (-not $runtime) { return }
+
+    # Resolve the entrypoint script path from the module's Images directory
+    $imagesDir = Join-Path (Split-Path $PSScriptRoot) 'Images'
+
     # Build docker run arguments
     $leafName = (Split-Path $resolvedPath -Leaf) -replace '[^a-zA-Z0-9_.-]', '-'
     $containerName = "dclaude-${leafName}-$(Get-Random -Maximum 9999)"
@@ -151,6 +177,26 @@ function Invoke-DClaude {
         '-v', "${resolvedPath}:$($paths.Workspace):rw"
         '-w', $paths.Workspace
     )
+
+    # Mount runtime volume (Node.js + Claude Code) read-only
+    $dockerArgs += '-v'
+    $dockerArgs += "$($runtime.VolumeName):$($runtime.MountPath):ro"
+
+    # Mount entrypoint script from host and override container's entrypoint
+    if ($containerOS -eq 'linux') {
+        $entrypointHost = Join-Path $imagesDir 'entrypoint.sh'
+        $dockerArgs += '-v'
+        $dockerArgs += "${entrypointHost}:/mnt/dclaude/entrypoint.sh:ro"
+        $dockerArgs += '--entrypoint'
+        $dockerArgs += '/mnt/dclaude/entrypoint.sh'
+    }
+    else {
+        $entrypointHost = Join-Path $imagesDir 'entrypoint.ps1'
+        $dockerArgs += '-v'
+        $dockerArgs += "${entrypointHost}:C:\mnt\dclaude\entrypoint.ps1:ro"
+        $dockerArgs += '--entrypoint'
+        $dockerArgs += 'powershell'
+    }
 
     # Linux: entrypoint drops privileges via setpriv with --no-new-privs.
     # Windows: --security-opt=no-new-privileges is not supported.
@@ -173,6 +219,18 @@ function Invoke-DClaude {
     $dockerArgs += Get-EnvironmentPassthroughArgs -HostPath $resolvedPath -Patterns $envPatterns
     $dockerArgs += '-e'
     $dockerArgs += "DCLAUDE_WORKSPACE=$($paths.Workspace)"
+    $dockerArgs += '-e'
+    $dockerArgs += "DCLAUDE_RUNTIME=$($runtime.MountPath)"
+    $dockerArgs += '-e'
+    $dockerArgs += 'DCLAUDE_CONTAINER=1'
+
+    # Inject env constants from image config
+    if ($imageEnv) {
+        foreach ($prop in $imageEnv.PSObject.Properties) {
+            $dockerArgs += '-e'
+            $dockerArgs += "$($prop.Name)=$($prop.Value)"
+        }
+    }
 
     # Mount init.d directories for user/project init scripts
     $dclaudeUserDir = Join-Path $HOME '.dclaude'
@@ -248,6 +306,13 @@ apk add --no-cache curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x
 
     # Add image tag
     $dockerArgs += $imageTag
+
+    # On Windows, the entrypoint is 'powershell' — the script path goes after the image tag
+    if ($containerOS -eq 'windows') {
+        $dockerArgs += '-NoProfile'
+        $dockerArgs += '-File'
+        $dockerArgs += 'C:\mnt\dclaude\entrypoint.ps1'
+    }
 
     # Add any extra arguments for claude
     if ($ClaudeArgs -and $ClaudeArgs.Count -gt 0) {

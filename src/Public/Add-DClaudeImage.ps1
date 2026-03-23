@@ -46,6 +46,9 @@ function Add-DClaudeImage {
         [string[]]$Volumes,
 
         [Parameter()]
+        [hashtable]$Env,
+
+        [Parameter()]
         [ValidateSet('Windows', 'Linux')]
         [string]$Platform,
 
@@ -93,6 +96,13 @@ function Add-DClaudeImage {
     $platformEntry = [PSCustomObject]@{ tag = $Tag }
     if ($Volumes -and $Volumes.Count -gt 0) {
         $platformEntry | Add-Member -MemberType NoteProperty -Name 'volumes' -Value @($Volumes)
+    }
+    if ($Env -and $Env.Count -gt 0) {
+        $envObject = [PSCustomObject]@{}
+        foreach ($key in $Env.Keys) {
+            $envObject | Add-Member -MemberType NoteProperty -Name $key -Value $Env[$key]
+        }
+        $platformEntry | Add-Member -MemberType NoteProperty -Name 'env' -Value $envObject
     }
 
     if ($PSCmdlet.ShouldProcess("Image '$Name' ($platformKey)", 'Add')) {

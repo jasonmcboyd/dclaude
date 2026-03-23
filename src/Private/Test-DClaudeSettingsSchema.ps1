@@ -55,6 +55,9 @@ function Test-DClaudeSettingsSchema {
                     if ($platEntry.PSObject.Properties['volumes'] -and $platEntry.volumes -isnot [array]) {
                         $errors += "$Label`: images.'$imageName'.'$platName'.volumes must be an array"
                     }
+                    if ($platEntry.PSObject.Properties['env'] -and $platEntry.env -isnot [PSCustomObject]) {
+                        $errors += "$Label`: images.'$imageName'.'$platName'.env must be an object"
+                    }
                 }
             }
         }

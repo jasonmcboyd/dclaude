@@ -38,10 +38,12 @@ function Resolve-ImageKey {
 
     $volumes = if ($platformEntry.volumes) { @($platformEntry.volumes) } else { @() }
     $envPassthrough = if ($platformEntry.envPassthrough) { @($platformEntry.envPassthrough) } else { @() }
+    $env = if ($platformEntry.PSObject.Properties['env'] -and $platformEntry.env) { $platformEntry.env } else { $null }
 
     return [PSCustomObject]@{
         tag            = $platformEntry.tag
         volumes        = $volumes
         envPassthrough = $envPassthrough
+        env            = $env
     }
 }
