@@ -26,12 +26,18 @@ CLAUDE_JSON="/home/claude/.claude.json"
 # Workspace path: use host-path mount if provided, fall back to legacy /workspace
 WORKSPACE="${DCLAUDE_WORKSPACE:-/workspace}"
 
+# Fall back to runtime volume git if the image doesn't have it
+if ! command -v git > /dev/null 2>&1 && [ -x "${RUNTIME}/git/bin/git" ]; then
+    export GIT_EXEC_PATH="${RUNTIME}/git/libexec/git-core"
+    export PATH="${PATH}:${RUNTIME}/git/bin"
+fi
+
 # Trust the workspace directory to avoid "dubious ownership" errors from git.
 # This runs here instead of the Dockerfile because the workspace path is dynamic.
 if command -v git > /dev/null 2>&1; then
     git config --global --add safe.directory "$WORKSPACE"
 else
-    echo "[dclaude] WARN: git is not installed in this image. Some Claude Code features may not work." >&2
+    echo "[dclaude] WARN: git is not available. Some Claude Code features may not work." >&2
 fi
 
 # --- Root detection and dynamic UID matching ---
@@ -232,11 +238,12 @@ if [ "$(id -u)" = "0" ]; then
             --inh-caps=+fowner,+dac_override \
             --ambient-caps=+fowner,+dac_override \
             --no-new-privs \
-            -- claude --dangerously-skip-permissions "$@"
+            -- env PATH="$PATH" HOME="/home/claude" claude --dangerously-skip-permissions "$@"
     else
         echo "[dclaude] WARN: setpriv not found, falling back to su (no ambient caps)" >&2
-        exec su -s /bin/sh claude -c "exec claude --dangerously-skip-permissions$(printf ' %q' "$@")"
+        exec su -s /bin/sh claude -c "export PATH='$PATH' HOME='/home/claude'; exec claude --dangerously-skip-permissions$(printf ' %q' "$@")"
     fi
 fi
 
+export HOME="/home/claude"
 exec claude --dangerously-skip-permissions "$@"

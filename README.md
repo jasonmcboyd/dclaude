@@ -2,6 +2,20 @@
 
 Run Claude Code with `--dangerously-skip-permissions` inside Docker containers so the container itself is the security boundary. Your project, Claude config, API key, and configurable volumes are mounted into an isolated container where Claude can operate freely without risk to your host system.
 
+## Container Platform Support
+
+dclaude supports three deployment configurations:
+
+| Host OS | Container OS | Notes |
+|---|---|---|
+| Windows | Windows | Full Windows container support, including .NET Framework workloads |
+| Windows | Linux | Docker Desktop Linux container mode; recommended for most projects |
+| Linux / macOS | Linux | Native Linux containers |
+
+The launcher auto-detects the current Docker container mode via `docker info` and selects the matching platform block from your image configuration. You can maintain separate image tags and volume mounts for Windows and Linux containers under the same image key — switching modes is transparent to project config.
+
+Windows container support is particularly useful for workloads that require the Windows container filesystem, COM components, .NET Framework (not just .NET), or Windows-specific toolchains. Linux containers on a Windows host (via Docker Desktop) are otherwise recommended and require no additional setup.
+
 ## Prerequisites
 
 - Docker (Windows, macOS, or Linux)
@@ -89,6 +103,8 @@ dclaude
 When neither `-Image` nor `-ImageKey` is specified, the image is resolved from the project config file (`.dclaude/settings.json`) in the working directory.
 
 ## Configuration
+
+dclaude uses a three-tier configuration hierarchy. The **user config** defines a global image registry that applies across all projects. The **project config** is committed to source control so the whole team uses the same image without coordination. **Local overrides** let individual developers customize settings per-machine (a different image variant, extra volume mounts) without touching the committed file or causing merge conflicts. Each tier is optional — you only need the layers that add value for your workflow.
 
 ### User Config — `~/.dclaude/settings.json`
 
@@ -252,36 +268,26 @@ Set-DClaudeProject -ImageKey dotnet-core -Path ~/repos/other-project
 | `-Volumes` | `string[]` | Project-specific volume mounts in `host:container` format. Optional. |
 | `-Path` | `string` | Target project directory. Defaults to the current directory. |
 
-## Building Images
+## Images
 
-The repository includes Dockerfiles for building images. Use `scripts/Build-Image.ps1` to build them locally. The script auto-detects whether Docker is in Windows or Linux container mode and builds the matching image.
-
-```powershell
-# PowerShell — builds Windows or Linux variant depending on Docker mode
-./scripts/Build-Image.ps1 -Name pwsh
-
-# .NET SDK — builds Windows (SDK 8.0) or Linux (SDK 10.0) variant
-./scripts/Build-Image.ps1 -Name dotnet-core
-
-# .NET Framework SDK 4.8.1 (Windows only)
-./scripts/Build-Image.ps1 -Name dotnet-framework
-```
-
-Windows images are built from `Images/Dockerfile` and Linux images from `Images/Dockerfile.linux`. Linux images run as a non-root `claude` user (required by Claude Code). The Windows Dockerfile:
-
-- Accepts a `BASE_IMAGE` build argument pointing to any Windows container base
-- Installs Git for Windows (required by Claude Code)
-- Installs Node.js 22 LTS and `@anthropic-ai/claude-code` globally
-- Sets the entrypoint to `claude --dangerously-skip-permissions`
-- Trusts the workspace directory as a safe Git directory
-
-These images are provided as a convenience. Any Docker image with Claude Code installed works with dclaude — the module auto-detects the container OS and sets paths accordingly.
-
-To build a custom image from a different base, pass `--build-arg` directly to Docker:
+dclaude works with any stock Docker image — no custom Dockerfiles required. Node.js and Claude Code are injected at runtime via a versioned named volume that is lazily provisioned on first use.
 
 ```powershell
-docker build --build-arg "BASE_IMAGE=my-base:latest" -t my-custom:latest -f Images/Dockerfile Images/
+# Use any stock image directly
+Invoke-DClaude -Image 'python:3.12-slim'
+Invoke-DClaude -Image 'mcr.microsoft.com/dotnet/sdk:8.0'
+Invoke-DClaude -Image 'mcr.microsoft.com/powershell:lts'
 ```
+
+The runtime volume contains Node.js and Claude Code (plus MinGit on Windows). It is mounted read-only and shared across containers running the same module version. Stale volumes from previous versions are cleaned up automatically.
+
+Alpine-based images (e.g. `python:3.12-alpine`) are not currently supported — use the standard variants instead (e.g. `python:3.12-slim`).
+
+If you need additional tools (az, kubectl, terraform, etc.), install them in your image or use an [init script](#init-scripts).
+
+## CI/CD and Releases
+
+The module is published to [PowerShell Gallery](https://www.powershellgallery.com/packages/dclaude) via GitHub Actions. Pushing a version tag (e.g. `v0.15.1`) triggers the `publish-release.yml` workflow, which generates the module manifest and publishes to PSGallery automatically.
 
 ## What Gets Mounted
 
@@ -289,10 +295,22 @@ Every container run by `dclaude` receives these mounts automatically:
 
 | Host path | Container path (Windows) | Container path (Linux) | Mode | Purpose |
 |---|---|---|---|---|
-| `$Path` (working dir) | `C:/workspace` | `/workspace` | read-write | Project files |
-| `~/.claude` | `C:/Users/ContainerAdministrator/.claude` | `/home/claude/.claude` | read-only | Claude settings and history |
+| `$Path` (working dir) | Host path as-is | Translated host path (e.g. `/c/Users/you/repos/myproject`) | read-write | Project files |
+| `~/.claude` | `C:/mnt/host-claude` | `/mnt/host-claude` | read-write | Claude settings staging; entrypoint symlinks into `~/.claude` |
+| Runtime volume | `C:\dclaude-runtime` | `/opt/dclaude-runtime` | read-only | Node.js + Claude Code |
+| Entrypoint script | `C:\mnt\dclaude\entrypoint.ps1` | `/mnt/dclaude/entrypoint.sh` | read-only | Container init from host module |
 
 Additional volume mounts are layered from two sources: image-level volumes defined in the matching platform block of the user config, and project-level volumes from the `volumes` array in the project config. Both sets are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.
+
+### Session Continuity and `/resume`
+
+Claude Code's `/resume` command discovers previous sessions by scanning `~/.claude/projects/<key>/` for `.jsonl` conversation files. The project key is derived from the workspace path, so the container-side workspace path must match what Claude Code expects.
+
+dclaude bind-mounts the host project directory directly into the container at the correct path. This is a bind mount, not a symlink. The distinction matters: Claude Code's session discovery uses `readdir` with `{withFileTypes: true}`, and that API returns `isDirectory() = false` for symlinks — symlinked project directories are silently skipped. Bind mounts appear as real directories and are found correctly.
+
+When the host project directory does not yet exist (first run), the entrypoint creates it and falls back to a symlink, which is sufficient until the first session is recorded. On subsequent runs, the bind mount takes over.
+
+The result is that `/resume` works across container runs and across restarts without any manual session management.
 
 ## Docker Access
 
@@ -327,6 +345,19 @@ dclaude's purpose is to move the trust boundary from Claude Code's permission sy
 | `.claude.json` sanitization | Host file used as-is | Host paths stripped, workspace pre-accepted |
 | Process isolation | None — runs as your user | Docker container boundary |
 | Network | Full host network | Docker default network (outbound only) |
+
+### `.claude.json` Sanitization
+
+The host `~/.claude.json` file is not mounted directly into the container. Instead, the entrypoint reads it from a staging path, transforms it, and writes the result to the container's `~/.claude.json`. The transformations applied on every run:
+
+| Field | Action | Reason |
+|---|---|---|
+| `projects` | Deleted, then re-created with the container workspace path pre-accepted | Host project paths are not valid inside the container; pre-accepting the workspace suppresses the trust dialog |
+| `githubRepoPaths` | Deleted | Host-specific paths that are meaningless inside the container |
+| `officialMarketplaceAutoInstallAttempted` | Set to `true` | Suppresses the one-time marketplace install prompt |
+| `officialMarketplaceAutoInstalled` | Set to `true` | Suppresses the one-time marketplace install prompt |
+
+The host file is never modified. All other settings (themes, model preferences, keybindings, etc.) are preserved.
 
 **Things dclaude does not protect against:**
 

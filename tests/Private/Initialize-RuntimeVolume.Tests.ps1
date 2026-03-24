@@ -59,7 +59,7 @@ Describe 'Initialize-RuntimeVolume' {
             $result.MountPath | Should -Be '/opt/dclaude-runtime'
             # Should have called docker twice: check + provision
             $script:dockerCalls.Count | Should -Be 2
-            $script:dockerCalls[1] | Should -BeLike '*alpine:latest*'
+            $script:dockerCalls[1] | Should -BeLike '*debian:bookworm-slim*'
         }
 
         It 'writes a provisioning message' {

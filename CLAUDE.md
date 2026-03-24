@@ -18,6 +18,9 @@ tests/
   Private/              # Pester 5 tests mirroring src/Private/
 scripts/
   create-module-manifest.ps1  # CI: generate manifest for PSGallery publish
+.github/
+  workflows/
+    publish-release.yml # CI/CD: publish to PSGallery on version tag push (v*)
 ```
 
 ## Testing
@@ -54,6 +57,8 @@ Instead of building custom Docker images, dclaude injects Node.js + Claude Code 
 - The Docker CLI volume (`dclaude-docker-cli-*`) has a separate lifecycle, opt-in via `-DockerAccess`
 
 Entrypoint scripts are mounted from the host module's `Images/` directory at `docker run` time (not baked into images). This means changes to entrypoints take effect immediately without any rebuild.
+
+**Alpine limitation:** Alpine-based images (musl libc) are not currently supported. The runtime volume uses glibc-linked Node.js binaries.
 
 ### Container Mounting Strategy
 

@@ -166,7 +166,7 @@ function Invoke-DClaude {
     if (-not $runtime) { return }
 
     # Resolve the entrypoint script path from the module's Images directory
-    $imagesDir = Join-Path (Split-Path $PSScriptRoot) 'Images'
+    $imagesDir = Join-Path (Split-Path (Split-Path $PSScriptRoot)) 'Images'
 
     # Build docker run arguments
     $leafName = (Split-Path $resolvedPath -Leaf) -replace '[^a-zA-Z0-9_.-]', '-'
