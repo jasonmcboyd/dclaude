@@ -21,6 +21,9 @@ tests/
 scripts/
   build-image.ps1       # Build Docker images (-Name pwsh|dotnet-core|dotnet-framework or -All)
   create-module-manifest.ps1  # CI: generate manifest for PSGallery publish
+.github/
+  workflows/
+    publish-release.yml # CI/CD: publish to PSGallery on version tag push (v*)
 ```
 
 ## Building and Testing
