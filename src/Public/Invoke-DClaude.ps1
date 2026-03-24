@@ -188,7 +188,7 @@ function Invoke-DClaude {
         $dockerArgs += '-v'
         $dockerArgs += "${entrypointHost}:/mnt/dclaude/entrypoint.sh:ro"
         $dockerArgs += '--entrypoint'
-        $dockerArgs += '/mnt/dclaude/entrypoint.sh'
+        $dockerArgs += '/bin/sh'
     }
     else {
         $entrypointHost = Join-Path $imagesDir 'entrypoint.ps1'
@@ -307,8 +307,13 @@ apk add --no-cache curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x
     # Add image tag
     $dockerArgs += $imageTag
 
-    # On Windows, the entrypoint is 'powershell' — the script path goes after the image tag
-    if ($containerOS -eq 'windows') {
+    # Entrypoint script path goes after the image tag (as CMD arguments to the ENTRYPOINT)
+    # Linux: /bin/sh runs the mounted script (Windows bind mounts lose the executable bit)
+    # Windows: powershell runs the mounted script with -NoProfile -File
+    if ($containerOS -eq 'linux') {
+        $dockerArgs += '/mnt/dclaude/entrypoint.sh'
+    }
+    else {
         $dockerArgs += '-NoProfile'
         $dockerArgs += '-File'
         $dockerArgs += 'C:\mnt\dclaude\entrypoint.ps1'
