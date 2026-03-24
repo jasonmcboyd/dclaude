@@ -33,9 +33,10 @@ if ! command -v git > /dev/null 2>&1 && [ -x "${RUNTIME}/git/bin/git" ]; then
 fi
 
 # Trust the workspace directory to avoid "dubious ownership" errors from git.
-# This runs here instead of the Dockerfile because the workspace path is dynamic.
+# Write directly to claude's gitconfig (not root's) since the entrypoint runs as root
+# but claude is the user that will actually use git.
 if command -v git > /dev/null 2>&1; then
-    git config --global --add safe.directory "$WORKSPACE"
+    git config -f /home/claude/.gitconfig --add safe.directory "$WORKSPACE"
 else
     echo "[dclaude] WARN: git is not available. Some Claude Code features may not work." >&2
 fi
