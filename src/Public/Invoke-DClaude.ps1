@@ -165,8 +165,12 @@ function Invoke-DClaude {
     $runtime = Initialize-RuntimeVolume -ContainerOS $containerOS -Version $moduleVersion
     if (-not $runtime) { return }
 
-    # Resolve the entrypoint script path from the module's Images directory
-    $imagesDir = Join-Path (Split-Path (Split-Path $PSScriptRoot)) 'Images'
+    # Resolve the entrypoint script path from the module's Entrypoints directory.
+    # Try sibling of Public/ first (installed module layout), then repo root layout.
+    $entrypointsDir = Join-Path (Split-Path $PSScriptRoot) 'Entrypoints'
+    if (-not (Test-Path $entrypointsDir)) {
+        $entrypointsDir = Join-Path (Split-Path (Split-Path $PSScriptRoot)) 'Entrypoints'
+    }
 
     # Build docker run arguments
     $leafName = (Split-Path $resolvedPath -Leaf) -replace '[^a-zA-Z0-9_.-]', '-'
@@ -184,14 +188,14 @@ function Invoke-DClaude {
 
     # Mount entrypoint script from host and override container's entrypoint
     if ($containerOS -eq 'linux') {
-        $entrypointHost = Join-Path $imagesDir 'entrypoint.sh'
+        $entrypointHost = Join-Path $entrypointsDir 'entrypoint.sh'
         $dockerArgs += '-v'
         $dockerArgs += "${entrypointHost}:/mnt/dclaude/entrypoint.sh:ro"
         $dockerArgs += '--entrypoint'
         $dockerArgs += '/bin/sh'
     }
     else {
-        $entrypointHost = Join-Path $imagesDir 'entrypoint.ps1'
+        $entrypointHost = Join-Path $entrypointsDir 'entrypoint.ps1'
         $dockerArgs += '-v'
         $dockerArgs += "${entrypointHost}:C:\mnt\dclaude\entrypoint.ps1:ro"
         $dockerArgs += '--entrypoint'

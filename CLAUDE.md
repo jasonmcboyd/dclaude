@@ -10,7 +10,7 @@ src/
   dclaude.psd1          # Module manifest
   Public/               # 7 exported functions
   Private/              # 11 internal helper functions
-Images/
+Entrypoints/
   entrypoint.ps1        # Windows container init (mounted at runtime, not baked into images)
   entrypoint.sh         # Linux container init (mounted at runtime, not baked into images)
 tests/
@@ -56,7 +56,7 @@ Instead of building custom Docker images, dclaude injects Node.js + Claude Code 
 - Stale volumes from previous module versions are cleaned up by `Remove-StaleRuntimeVolumes.ps1`
 - The Docker CLI volume (`dclaude-docker-cli-*`) has a separate lifecycle, opt-in via `-DockerAccess`
 
-Entrypoint scripts are mounted from the host module's `Images/` directory at `docker run` time (not baked into images). This means changes to entrypoints take effect immediately without any rebuild.
+Entrypoint scripts are mounted from the host module's `Entrypoints/` directory at `docker run` time (not baked into images). This means changes to entrypoints take effect immediately without any rebuild.
 
 **Alpine limitation:** Alpine-based images (musl libc) are not currently supported. The runtime volume uses glibc-linked Node.js binaries.
 
@@ -64,7 +64,7 @@ Entrypoint scripts are mounted from the host module's `Images/` directory at `do
 
 - Workspace → mounted at the **host path** (translated for cross-platform: `C:\Users\jason\repos` → `/c/Users/jason/repos` on Linux containers), read-write
 - Runtime volume → mounted read-only (Node.js + Claude Code)
-- Entrypoint script → mounted read-only from host `Images/` directory
+- Entrypoint script → mounted read-only from host `Entrypoints/` directory
 - `~/.claude` → `/mnt/host-claude` (staging path, not directly at `~/.claude`)
 - Entrypoint creates **symlinks** from container's `~/.claude/` into the staging mount
 - `projects` and `rules` directories are handled specially (not bulk-symlinked)
@@ -95,7 +95,7 @@ The host-side key (for locating the project dir on the host) is derived from the
 
 ### Entrypoints
 
-Both entrypoints (`.ps1` and `.sh`) are mounted from the host `Images/` directory and follow the same pattern:
+Both entrypoints (`.ps1` and `.sh`) are mounted from the host `Entrypoints/` directory and follow the same pattern:
 1. Set up PATH to include the runtime volume's Node.js (and MinGit on Windows)
 2. Create `claude` user if not exists (Linux only — stock images won't have it)
 3. Symlink host `.claude` subdirs/files into container home (except `projects`, `rules`)

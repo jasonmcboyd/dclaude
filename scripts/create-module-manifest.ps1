@@ -19,6 +19,7 @@ Write-Host "Prerelease: $($prerelease ?? '(none)')"
 $publishDir = './publish/dclaude'
 New-Item -ItemType Directory -Path $publishDir -Force | Out-Null
 Copy-Item -Path './src/*' -Destination $publishDir -Recurse -Force
+Copy-Item -Path './Entrypoints' -Destination $publishDir -Recurse -Force
 
 # Build New-ModuleManifest parameters
 $manifestParams = @{
