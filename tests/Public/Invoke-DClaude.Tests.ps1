@@ -10,6 +10,8 @@ BeforeAll {
     . "$PSScriptRoot/../../src/Private/Resolve-ContainerPaths.ps1"
     . "$PSScriptRoot/../../src/Private/Get-VolumeArgs.ps1"
     . "$PSScriptRoot/../../src/Private/Get-EnvironmentPassthroughArgs.ps1"
+    . "$PSScriptRoot/../../src/Private/Initialize-RuntimeVolume.ps1"
+    . "$PSScriptRoot/../../src/Private/Remove-StaleRuntimeVolumes.ps1"
     . "$PSScriptRoot/../../src/Public/Invoke-DClaude.ps1"
 
     # Define a docker function so Pester can mock it
@@ -43,6 +45,21 @@ Describe 'Invoke-DClaude' {
 
         # Suppress project config from leaking in from the real filesystem
         Mock Get-DClaudeConfig { return $null }
+
+        # Mock runtime volume functions
+        Mock Initialize-RuntimeVolume {
+            if ($ContainerOS -eq 'linux') {
+                return [PSCustomObject]@{
+                    VolumeName = 'dclaude-runtime-linux-v0.6.4'
+                    MountPath  = '/opt/dclaude-runtime'
+                }
+            }
+            return [PSCustomObject]@{
+                VolumeName = 'dclaude-runtime-windows-v0.6.4'
+                MountPath  = 'C:\dclaude-runtime'
+            }
+        }
+        Mock Remove-StaleRuntimeVolumes { }
 
         # Default .claude.json symlink check — returns a valid symlink target.
         # The 'Windows .claude.json symlink check' context overrides this with Target = $null.
@@ -534,6 +551,139 @@ Describe 'Invoke-DClaude' {
 
             Should -Not -Invoke Get-Help
             Should -Invoke docker
+        }
+    }
+
+    Context 'runtime volume mount' {
+        It 'mounts the runtime volume read-only on Linux' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*dclaude-runtime-linux-v0.6.4:/opt/dclaude-runtime:ro*'
+        }
+
+        It 'mounts the runtime volume read-only on Windows' {
+            Mock Get-DockerContainerOS { return 'windows' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*dclaude-runtime-windows*:ro*'
+        }
+
+        It 'calls Remove-StaleRuntimeVolumes' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Invoke Remove-StaleRuntimeVolumes -Times 1
+        }
+
+        It 'calls Initialize-RuntimeVolume' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Invoke Initialize-RuntimeVolume -Times 1
+        }
+
+        It 'returns early when Initialize-RuntimeVolume fails' {
+            Mock Initialize-RuntimeVolume { return $null }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Not -Invoke docker
+        }
+    }
+
+    Context 'entrypoint override' {
+        It 'mounts entrypoint.sh and sets --entrypoint on Linux' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*entrypoint.sh:/mnt/dclaude/entrypoint.sh:ro*'
+            $argsString | Should -BeLike '*--entrypoint /mnt/dclaude/entrypoint.sh*'
+        }
+
+        It 'mounts entrypoint.ps1 and sets --entrypoint powershell on Windows' {
+            Mock Get-DockerContainerOS { return 'windows' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*entrypoint.ps1*'
+            $argsString | Should -BeLike '*--entrypoint powershell*'
+        }
+
+        It 'adds -NoProfile -File entrypoint.ps1 after image tag on Windows' {
+            Mock Get-DockerContainerOS { return 'windows' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $imageIdx = [array]::IndexOf($script:capturedDockerArgs, 'test:latest')
+            $noProfileIdx = [array]::IndexOf($script:capturedDockerArgs, '-NoProfile')
+            $noProfileIdx | Should -BeGreaterThan $imageIdx
+        }
+    }
+
+    Context 'DCLAUDE_RUNTIME and DCLAUDE_CONTAINER environment variables' {
+        It 'passes DCLAUDE_RUNTIME with the runtime mount path' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*DCLAUDE_RUNTIME=*'
+        }
+
+        It 'passes DCLAUDE_CONTAINER=1' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*DCLAUDE_CONTAINER=1*'
+        }
+    }
+
+    Context 'image env injection' {
+        It 'injects env constants from image config' {
+            Mock Resolve-ImageKey {
+                return [PSCustomObject]@{
+                    tag            = 'test:latest'
+                    volumes        = @()
+                    envPassthrough = @()
+                    env            = [PSCustomObject]@{
+                        CLOUD_ML_REGION = 'us-east1'
+                        ANTHROPIC_VERTEX_PROJECT_ID = 'my-project'
+                    }
+                }
+            }
+
+            Invoke-DClaude -ImageKey 'vertex' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*CLOUD_ML_REGION=us-east1*'
+            $argsString | Should -BeLike '*ANTHROPIC_VERTEX_PROJECT_ID=my-project*'
+        }
+
+        It 'does not inject env when not configured' {
+            Mock Resolve-ImageKey {
+                return [PSCustomObject]@{
+                    tag            = 'test:latest'
+                    volumes        = @()
+                    envPassthrough = @()
+                    env            = $null
+                }
+            }
+
+            Invoke-DClaude -ImageKey 'plain' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            # Should not have any image-specific env vars (only the standard DCLAUDE_* ones)
+            $envEntries = @()
+            for ($i = 0; $i -lt $script:capturedDockerArgs.Count; $i++) {
+                if ($script:capturedDockerArgs[$i] -eq '-e' -and ($i + 1) -lt $script:capturedDockerArgs.Count) {
+                    $envEntries += $script:capturedDockerArgs[$i + 1]
+                }
+            }
+            $envEntries | Where-Object { $_ -like 'CLOUD_ML_REGION=*' } | Should -BeNullOrEmpty
         }
     }
 }

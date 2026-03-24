@@ -51,6 +51,7 @@ function Get-DClaudeImage {
                 Platform = $platformName
                 Tag      = $platformValue.tag
                 Volumes  = if ($platformValue.volumes) { @($platformValue.volumes) } else { @() }
+                Env      = if ($platformValue.PSObject.Properties['env'] -and $platformValue.env) { $platformValue.env } else { $null }
             }
         }
     }

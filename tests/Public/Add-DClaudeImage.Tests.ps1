@@ -128,6 +128,28 @@ Describe 'Add-DClaudeImage' {
         }
     }
 
+    Context 'when adding with env' {
+        It 'includes env in the platform entry' {
+            Mock Read-SettingsFile { return $null }
+            Mock Get-DClaudeUserConfig { return $null }
+
+            Add-DClaudeImage -Name 'vertex' -Tag 'python:3.12-slim' -Platform Linux -Env @{ CLOUD_ML_REGION = 'us-east1'; ANTHROPIC_VERTEX_PROJECT_ID = 'my-project' }
+
+            $script:savedConfig.images.vertex.linux.env | Should -Not -BeNullOrEmpty
+            $script:savedConfig.images.vertex.linux.env.CLOUD_ML_REGION | Should -Be 'us-east1'
+            $script:savedConfig.images.vertex.linux.env.ANTHROPIC_VERTEX_PROJECT_ID | Should -Be 'my-project'
+        }
+
+        It 'does not include env when not specified' {
+            Mock Read-SettingsFile { return $null }
+            Mock Get-DClaudeUserConfig { return $null }
+
+            Add-DClaudeImage -Name 'pwsh' -Tag 'pwsh:latest' -Platform Linux
+
+            $script:savedConfig.images.pwsh.linux.PSObject.Properties['env'] | Should -BeNullOrEmpty
+        }
+    }
+
     Context 'platform auto-detection' {
         BeforeEach {
             Mock Read-SettingsFile { return $null }

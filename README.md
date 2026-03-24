@@ -268,36 +268,26 @@ Set-DClaudeProject -ImageKey dotnet-core -Path ~/repos/other-project
 | `-Volumes` | `string[]` | Project-specific volume mounts in `host:container` format. Optional. |
 | `-Path` | `string` | Target project directory. Defaults to the current directory. |
 
-## Building Images
+## Images
 
-The repository includes Dockerfiles for building images. Use `scripts/Build-Image.ps1` to build them locally. The script auto-detects whether Docker is in Windows or Linux container mode and builds the matching image.
-
-```powershell
-# PowerShell — builds Windows or Linux variant depending on Docker mode
-./scripts/Build-Image.ps1 -Name pwsh
-
-# .NET SDK — builds Windows (SDK 8.0) or Linux (SDK 10.0) variant
-./scripts/Build-Image.ps1 -Name dotnet-core
-
-# .NET Framework SDK 4.8.1 (Windows only)
-./scripts/Build-Image.ps1 -Name dotnet-framework
-```
-
-Windows images are built from `Images/Dockerfile` and Linux images from `Images/Dockerfile.linux`. Linux images run as a non-root `claude` user (required by Claude Code). The Windows Dockerfile:
-
-- Accepts a `BASE_IMAGE` build argument pointing to any Windows container base
-- Installs Git for Windows (required by Claude Code)
-- Installs Node.js 22 LTS and `@anthropic-ai/claude-code` globally
-- Sets the entrypoint to `claude --dangerously-skip-permissions`
-- Trusts the workspace directory as a safe Git directory
-
-These images are provided as a convenience. Any Docker image with Claude Code installed works with dclaude — the module auto-detects the container OS and sets paths accordingly.
-
-To build a custom image from a different base, pass `--build-arg` directly to Docker:
+dclaude works with any stock Docker image — no custom Dockerfiles required. Node.js and Claude Code are injected at runtime via a versioned named volume that is lazily provisioned on first use.
 
 ```powershell
-docker build --build-arg "BASE_IMAGE=my-base:latest" -t my-custom:latest -f Images/Dockerfile Images/
+# Use any stock image directly
+Invoke-DClaude -Image 'python:3.12-slim'
+Invoke-DClaude -Image 'mcr.microsoft.com/dotnet/sdk:8.0'
+Invoke-DClaude -Image 'mcr.microsoft.com/powershell:lts'
 ```
+
+The runtime volume contains Node.js and Claude Code (plus MinGit on Windows). It is mounted read-only and shared across containers running the same module version. Stale volumes from previous versions are cleaned up automatically.
+
+Alpine-based images (e.g. `python:3.12-alpine`) are not currently supported — use the standard variants instead (e.g. `python:3.12-slim`).
+
+If you need additional tools (az, kubectl, terraform, etc.), install them in your image or use an [init script](#init-scripts).
+
+## CI/CD and Releases
+
+The module is published to [PowerShell Gallery](https://www.powershellgallery.com/packages/dclaude) via GitHub Actions. Pushing a version tag (e.g. `v0.15.1`) triggers the `publish-release.yml` workflow, which generates the module manifest and publishes to PSGallery automatically.
 
 ## CI/CD and Releases
 
@@ -309,8 +299,10 @@ Every container run by `dclaude` receives these mounts automatically:
 
 | Host path | Container path (Windows) | Container path (Linux) | Mode | Purpose |
 |---|---|---|---|---|
-| `$Path` (working dir) | Host path as-is (e.g. `C:/Users/you/repos/myproject`) | Translated host path (e.g. `/c/Users/you/repos/myproject`) | read-write | Project files |
-| `~/.claude` | `C:/mnt/host-claude` | `/mnt/host-claude` | read-write | Claude settings staging; entrypoint symlinks contents into `~/.claude` |
+| `$Path` (working dir) | Host path as-is | Translated host path (e.g. `/c/Users/you/repos/myproject`) | read-write | Project files |
+| `~/.claude` | `C:/mnt/host-claude` | `/mnt/host-claude` | read-write | Claude settings staging; entrypoint symlinks into `~/.claude` |
+| Runtime volume | `C:\dclaude-runtime` | `/opt/dclaude-runtime` | read-only | Node.js + Claude Code |
+| Entrypoint script | `C:\mnt\dclaude\entrypoint.ps1` | `/mnt/dclaude/entrypoint.sh` | read-only | Container init from host module |
 
 Additional volume mounts are layered from two sources: image-level volumes defined in the matching platform block of the user config, and project-level volumes from the `volumes` array in the project config. Both sets are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.
 

@@ -114,6 +114,34 @@ Describe 'Test-DClaudeSettingsSchema' {
             $errors | Should -HaveCount 1
             $errors[0] | Should -BeLike "*volumes*array*"
         }
+
+        It 'reports error when env is not an object' {
+            $config = [PSCustomObject]@{
+                images = [PSCustomObject]@{
+                    pwsh = [PSCustomObject]@{
+                        linux = [PSCustomObject]@{ tag = 'test:latest'; env = 'not-object' }
+                    }
+                }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*env*object*"
+        }
+
+        It 'accepts a valid env object' {
+            $config = [PSCustomObject]@{
+                images = [PSCustomObject]@{
+                    vertex = [PSCustomObject]@{
+                        linux = [PSCustomObject]@{
+                            tag = 'test:latest'
+                            env = [PSCustomObject]@{ CLOUD_ML_REGION = 'us-east1' }
+                        }
+                    }
+                }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 0
+        }
     }
 
     Context 'invalid top-level properties' {

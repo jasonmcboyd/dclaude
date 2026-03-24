@@ -2,8 +2,15 @@ $ErrorActionPreference = 'Stop'
 
 try {
 
-$hostDir = 'C:\mnt\host-claude'
+# --- Runtime volume PATH setup ---
+$runtimePath = if ($env:DCLAUDE_RUNTIME) { $env:DCLAUDE_RUNTIME } else { 'C:\dclaude-runtime' }
+$env:PATH = "$runtimePath\node;$runtimePath\mingit\cmd;$env:PATH"
+
+# Ensure .claude directory exists
 $claudeDir = "$env:USERPROFILE\.claude"
+New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
+
+$hostDir = 'C:\mnt\host-claude'
 $claudeJson = "$env:USERPROFILE\.claude.json"
 
 # Workspace path: use host-path mount if provided, fall back to legacy C:\workspace
@@ -11,7 +18,12 @@ $Workspace = if ($env:DCLAUDE_WORKSPACE) { $env:DCLAUDE_WORKSPACE } else { 'C:\w
 
 # Trust the workspace directory to avoid "dubious ownership" errors from git.
 # This runs here instead of the Dockerfile because the workspace path is dynamic.
-git config --global --add safe.directory ($Workspace -replace '\\', '/')
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    git config --global --add safe.directory ($Workspace -replace '\\', '/')
+}
+else {
+    Write-Host "[dclaude] WARN: git is not installed in this image. Some Claude Code features may not work." -ForegroundColor Yellow
+}
 
 # Selectively link from the host .claude directory.
 # Symlink dirs and files so writes (e.g. OAuth token refresh) persist to host.
@@ -212,5 +224,5 @@ foreach ($initDir in @("$initBase\user-common", "$initBase\user-image", "$initBa
 # Reset ErrorActionPreference so claude.cmd stderr does not trigger
 # a PowerShell terminating error under the script-level 'Stop' preference.
 $ErrorActionPreference = 'Continue'
-& C:\nodejs\claude.cmd --dangerously-skip-permissions @args
+& claude.cmd --dangerously-skip-permissions @args
 exit $LASTEXITCODE

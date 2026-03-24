@@ -114,6 +114,36 @@ Describe 'Resolve-ImageKey' {
             $result.volumes | Should -HaveCount 2
             $result.volumes[0] | Should -Be 'C:/host:C:/container:ro'
         }
+
+        It 'returns null env when not configured' {
+            $result = Resolve-ImageKey -Key 'pwsh' -ContainerOS 'windows'
+            $result.env | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'when the platform entry has env' {
+        It 'returns the env object' {
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    images = [PSCustomObject]@{
+                        vertex = [PSCustomObject]@{
+                            linux = [PSCustomObject]@{
+                                tag = 'python:3.12-slim'
+                                env = [PSCustomObject]@{
+                                    CLOUD_ML_REGION = 'us-east1'
+                                    ANTHROPIC_VERTEX_PROJECT_ID = 'my-project'
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            $result = Resolve-ImageKey -Key 'vertex' -ContainerOS 'linux'
+            $result.env | Should -Not -BeNullOrEmpty
+            $result.env.CLOUD_ML_REGION | Should -Be 'us-east1'
+            $result.env.ANTHROPIC_VERTEX_PROJECT_ID | Should -Be 'my-project'
+        }
     }
 
     Context 'when the platform entry has no volumes' {

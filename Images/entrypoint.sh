@@ -1,6 +1,23 @@
 #!/bin/bash
 set -e
 
+# --- Runtime volume PATH setup ---
+RUNTIME="${DCLAUDE_RUNTIME:-/opt/dclaude-runtime}"
+export PATH="${RUNTIME}/node/bin:${PATH}"
+
+# --- Create claude user if not exists (stock images won't have it) ---
+if ! id claude >/dev/null 2>&1; then
+    # Remove any existing UID 1000 user first (e.g. 'app' in .NET SDK images)
+    existing=$(getent passwd 1000 | cut -d: -f1 2>/dev/null || true)
+    if [ -n "$existing" ] && [ "$existing" != "claude" ]; then
+        userdel "$existing"
+    fi
+    useradd -m -u 1000 claude 2>/dev/null || adduser -D -u 1000 claude 2>/dev/null || true
+fi
+
+# Ensure home directory exists
+mkdir -p /home/claude/.claude
+
 HOST_DIR="/mnt/host-claude"
 HOST_JSON="/mnt/host-claude.json"
 CLAUDE_HOME="/home/claude/.claude"
@@ -9,9 +26,20 @@ CLAUDE_JSON="/home/claude/.claude.json"
 # Workspace path: use host-path mount if provided, fall back to legacy /workspace
 WORKSPACE="${DCLAUDE_WORKSPACE:-/workspace}"
 
+# Fall back to runtime volume git if the image doesn't have it
+if ! command -v git > /dev/null 2>&1 && [ -x "${RUNTIME}/git/bin/git" ]; then
+    export GIT_EXEC_PATH="${RUNTIME}/git/libexec/git-core"
+    export PATH="${PATH}:${RUNTIME}/git/bin"
+fi
+
 # Trust the workspace directory to avoid "dubious ownership" errors from git.
-# This runs here instead of the Dockerfile because the workspace path is dynamic.
-git config --global --add safe.directory "$WORKSPACE"
+# Write directly to claude's gitconfig (not root's) since the entrypoint runs as root
+# but claude is the user that will actually use git.
+if command -v git > /dev/null 2>&1; then
+    git config -f /home/claude/.gitconfig --add safe.directory "$WORKSPACE"
+else
+    echo "[dclaude] WARN: git is not available. Some Claude Code features may not work." >&2
+fi
 
 # --- Root detection and dynamic UID matching ---
 if [ "$(id -u)" = "0" ]; then
@@ -211,11 +239,12 @@ if [ "$(id -u)" = "0" ]; then
             --inh-caps=+fowner,+dac_override \
             --ambient-caps=+fowner,+dac_override \
             --no-new-privs \
-            -- claude --dangerously-skip-permissions "$@"
+            -- env PATH="$PATH" HOME="/home/claude" claude --dangerously-skip-permissions "$@"
     else
         echo "[dclaude] WARN: setpriv not found, falling back to su (no ambient caps)" >&2
-        exec su -s /bin/sh claude -c "exec claude --dangerously-skip-permissions$(printf ' %q' "$@")"
+        exec su -s /bin/sh claude -c "export PATH='$PATH' HOME='/home/claude'; exec claude --dangerously-skip-permissions$(printf ' %q' "$@")"
     fi
 fi
 
+export HOME="/home/claude"
 exec claude --dangerously-skip-permissions "$@"

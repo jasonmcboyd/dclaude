@@ -3,7 +3,7 @@
     RootModule        = 'dclaude.psm1'
 
     # Version number of this module
-    ModuleVersion     = '0.6.4'
+    ModuleVersion     = '0.7.0'
 
     # Unique identifier for this module
     GUID              = '3a624731-85ed-4119-ac0b-b31add03fe23'
@@ -18,7 +18,7 @@
     Copyright         = '(c) Jason Boyd. All rights reserved.'
 
     # Description of the functionality provided by this module
-    Description       = 'Launch Docker containers with Claude Code pre-installed for isolated development environments.'
+    Description       = 'Launch Docker containers with Claude Code injected at runtime for isolated development environments.'
 
     # Minimum version of the PowerShell engine required by this module
     PowerShellVersion = '5.1'
