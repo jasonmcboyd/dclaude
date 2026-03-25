@@ -6,6 +6,9 @@ try {
 $runtimePath = if ($env:DCLAUDE_RUNTIME) { $env:DCLAUDE_RUNTIME } else { 'C:\dclaude-runtime' }
 $env:PATH = "$runtimePath\node;$runtimePath\mingit\cmd;$env:PATH"
 
+# Ensure truecolor support for CLI tools (stock images may not set this)
+if (-not $env:COLORTERM) { $env:COLORTERM = 'truecolor' }
+
 # Ensure .claude directory exists
 $claudeDir = "$env:USERPROFILE\.claude"
 New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null

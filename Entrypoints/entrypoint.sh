@@ -5,6 +5,9 @@ set -e
 RUNTIME="${DCLAUDE_RUNTIME:-/opt/dclaude-runtime}"
 export PATH="${RUNTIME}/node/bin:${PATH}"
 
+# Ensure truecolor support for CLI tools (stock images may not set this)
+export COLORTERM="${COLORTERM:-truecolor}"
+
 # --- Create claude user if not exists (stock images won't have it) ---
 if ! id claude >/dev/null 2>&1; then
     # Remove any existing UID 1000 user first (e.g. 'app' in .NET SDK images)
