@@ -220,20 +220,43 @@ function Invoke-DClaude {
         @($userConfig.envPassthrough)
     } else { @() }
     $envPatterns = $globalEnvPassthrough + $imageEnvPassthrough
-    $dockerArgs += Get-EnvironmentPassthroughArgs -HostPath $resolvedPath -Patterns $envPatterns
+    $envPassthroughResult = Get-EnvironmentPassthroughArgs -HostPath $resolvedPath -Patterns $envPatterns
+    $dockerArgs += $envPassthroughResult
+
+    # Collect passthrough env var names for container context
+    $passthroughNames = @()
+    for ($i = 0; $i -lt $envPassthroughResult.Count; $i++) {
+        if ($envPassthroughResult[$i] -eq '-e' -and ($i + 1) -lt $envPassthroughResult.Count) {
+            $val = $envPassthroughResult[$i + 1]
+            $name = if ($val -match '=') { ($val -split '=', 2)[0] } else { $val }
+            if ($name -notmatch '^DCLAUDE_') {
+                $passthroughNames += $name
+            }
+        }
+    }
+
     $dockerArgs += '-e'
     $dockerArgs += "DCLAUDE_WORKSPACE=$($paths.Workspace)"
     $dockerArgs += '-e'
     $dockerArgs += "DCLAUDE_RUNTIME=$($runtime.MountPath)"
     $dockerArgs += '-e'
     $dockerArgs += 'DCLAUDE_CONTAINER=1'
+    $dockerArgs += '-e'
+    $dockerArgs += "DCLAUDE_IMAGE=$imageTag"
 
     # Inject env constants from image config
     if ($imageEnv) {
         foreach ($prop in $imageEnv.PSObject.Properties) {
             $dockerArgs += '-e'
             $dockerArgs += "$($prop.Name)=$($prop.Value)"
+            $passthroughNames += $prop.Name
         }
+    }
+
+    # Pass env var name list so entrypoint can document them in context
+    if ($passthroughNames.Count -gt 0) {
+        $dockerArgs += '-e'
+        $dockerArgs += "DCLAUDE_ENV=$(($passthroughNames | Sort-Object -Unique) -join '|')"
     }
 
     # Mount init.d directories for user/project init scripts

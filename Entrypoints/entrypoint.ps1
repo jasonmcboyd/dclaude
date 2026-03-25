@@ -71,6 +71,7 @@ $contextLines = @(
     ''
     '## Key Facts'
     "- The workspace at ``$Workspace`` is mounted from the host path ``$hostPath``."
+    "- The container image is ``$($env:DCLAUDE_IMAGE ?? 'unknown')``."
     '- Your home directory and .claude config are container-local, with select items symlinked to the host for persistence.'
     '- Paths referenced in CLAUDE.md or other instructions (e.g., project directories, repo paths) may refer to host-only locations that are not mounted in this container.'
     ''
@@ -123,6 +124,21 @@ if (Test-Path '//./pipe/docker_engine') {
     $contextLines += '## Docker Access'
     $contextLines += ''
     $contextLines += 'The Docker named pipe is mounted into this container. You have access to the `docker` CLI and can build images, run containers, and manage Docker resources on the host. The containers you launch are **sibling containers** (not nested) — they run alongside this container on the same Docker daemon.'
+}
+
+# Append environment variables passed from the host
+$envList = $env:DCLAUDE_ENV
+if ($envList) {
+    $contextLines += ''
+    $contextLines += '## Environment Variables'
+    $contextLines += ''
+    $contextLines += 'The following environment variables were passed through from the host:'
+    $contextLines += ''
+    foreach ($varName in ($envList -split '\|')) {
+        if ($varName) {
+            $contextLines += "- ``$varName``"
+        }
+    }
 }
 
 $contextLines -join "`n" | Set-Content "$containerRulesDir\dclaude-context.md" -Encoding UTF8

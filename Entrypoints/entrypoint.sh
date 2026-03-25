@@ -100,6 +100,7 @@ You are running inside a dclaude Docker container.
 
 ## Key Facts
 - The workspace at \`$WORKSPACE\` is mounted from the host path \`$host_path\`.
+- The container image is \`${DCLAUDE_IMAGE:-unknown}\`.
 - Your home directory and .claude config are container-local, with select items symlinked to the host for persistence.
 - Paths referenced in CLAUDE.md or other instructions (e.g., project directories, repo paths) may refer to host-only locations that are not mounted in this container.
 
@@ -151,6 +152,18 @@ if [ -S /var/run/docker.sock ]; then
 
 The Docker socket is mounted into this container. You have access to the `docker` CLI and can build images, run containers, and manage Docker resources on the host. The containers you launch are **sibling containers** (not nested) — they run alongside this container on the same Docker daemon.
 DOCKER_EOF
+fi
+
+# Append environment variables passed from the host
+if [ -n "$DCLAUDE_ENV" ]; then
+    {
+        printf '\n## Environment Variables\n\n'
+        printf 'The following environment variables were passed through from the host:\n\n'
+        printf '%s\n' "$DCLAUDE_ENV" | tr '|' '\n' | while IFS= read -r var_name; do
+            [ -z "$var_name" ] && continue
+            printf '- `%s`\n' "$var_name"
+        done
+    } >> "$container_rules_dir/dclaude-context.md"
 fi
 
 # Link host conversation history so /resume finds conversations from the host.
