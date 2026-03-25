@@ -3,7 +3,7 @@
     RootModule        = 'dclaude.psm1'
 
     # Version number of this module
-    ModuleVersion     = '0.16.4'
+    ModuleVersion     = '0.16.5'
 
     # Unique identifier for this module
     GUID              = '3a624731-85ed-4119-ac0b-b31add03fe23'

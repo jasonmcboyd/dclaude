@@ -164,7 +164,7 @@ if [ -n "$DCLAUDE_ENV" ]; then
         printf 'The following environment variables were passed through from the host:\n\n'
         printf '%s\n' "$DCLAUDE_ENV" | tr '|' '\n' | while IFS= read -r var_name; do
             [ -z "$var_name" ] && continue
-            printf '- `%s`\n' "$var_name"
+            printf -- '- `%s`\n' "$var_name"
         done
     } >> "$container_rules_dir/dclaude-context.md"
 fi
