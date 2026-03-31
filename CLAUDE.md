@@ -113,7 +113,7 @@ Both entrypoints sanitize `.claude.json` before launching Claude Code. The canon
 
 | Field | Action |
 | --- | --- |
-| `projects` | Delete (host paths), then re-create with container workspace path pre-accepted |
+| `projects` | Delete (host paths), then re-create with container workspace path pre-accepted. MCP fields (`mcpServers`, `mcpContextUris`, `enabledMcpjsonServers`, `disabledMcpjsonServers`) are preserved from the matching host project entry. |
 | `githubRepoPaths` | Delete (host-specific paths) |
 | `officialMarketplaceAutoInstallAttempted` | Set to `true` (skip marketplace prompt) |
 | `officialMarketplaceAutoInstalled` | Set to `true` (skip marketplace prompt) |

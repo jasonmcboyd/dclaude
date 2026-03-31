@@ -192,19 +192,38 @@ else
     echo "[dclaude] WARN: no DCLAUDE_HOST_PATH or no host projects dir (DCLAUDE_HOST_PATH='$DCLAUDE_HOST_PATH')" >&2
 fi
 
-# Sanitize .claude.json — strip Windows paths that cause junk folders
+# Sanitize .claude.json — strip Windows paths that cause junk folders,
+# but preserve MCP server config from the host project entry.
 if [ -f "$HOST_JSON" ]; then
     if ! node -e "
         const fs = require('fs');
-        const [hostJson, claudeJson, workspace] = process.argv.slice(1);
+        const [hostJson, claudeJson, workspace, hostPath] = process.argv.slice(1);
         const cfg = JSON.parse(fs.readFileSync(hostJson, 'utf8'));
+
+        // Look up host project entry to preserve MCP fields.
+        const mcpFields = ['mcpServers', 'mcpContextUris', 'enabledMcpjsonServers', 'disabledMcpjsonServers'];
+        let preserved = {};
+        if (cfg.projects && hostPath) {
+            const candidates = [hostPath, hostPath.replace(/\\\\/g, '/')];
+            for (const key of candidates) {
+                if (cfg.projects[key]) {
+                    for (const f of mcpFields) {
+                        if (cfg.projects[key][f] !== undefined) {
+                            preserved[f] = cfg.projects[key][f];
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
         delete cfg.projects;
         delete cfg.githubRepoPaths;
         cfg.officialMarketplaceAutoInstallAttempted = true;
         cfg.officialMarketplaceAutoInstalled = true;
-        cfg.projects = { [workspace]: { allowedTools: [], hasTrustDialogAccepted: true } };
+        cfg.projects = { [workspace]: { allowedTools: [], hasTrustDialogAccepted: true, ...preserved } };
         fs.writeFileSync(claudeJson, JSON.stringify(cfg, null, 2));
-    " "$HOST_JSON" "$CLAUDE_JSON" "$WORKSPACE"; then
+    " "$HOST_JSON" "$CLAUDE_JSON" "$WORKSPACE" "${DCLAUDE_HOST_PATH:-}"; then
         echo "[dclaude] FATAL: Failed to sanitize .claude.json" >&2
         exit 1
     fi

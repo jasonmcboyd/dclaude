@@ -146,7 +146,8 @@ if ($envList) {
 
 $contextLines -join "`n" | Set-Content "$containerRulesDir\dclaude-context.md" -Encoding UTF8
 
-# Sanitize .claude.json — strip Windows paths and pre-accept container workspace
+# Sanitize .claude.json — strip Windows paths and pre-accept container workspace,
+# but preserve MCP server config from the host project entry.
 $claudeJsonInDir = "$claudeDir\.claude.json"
 if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
     try {
@@ -157,6 +158,24 @@ if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
         exit 1
     }
 
+    # Look up host project entry to preserve MCP fields before deleting projects.
+    $mcpFields = @('mcpServers', 'mcpContextUris', 'enabledMcpjsonServers', 'disabledMcpjsonServers')
+    $preserved = @{}
+    if ($cfg.PSObject.Properties['projects'] -and $hostPath) {
+        $candidates = @($hostPath, ($hostPath -replace '\\', '/'))
+        foreach ($candidate in $candidates) {
+            $entry = $cfg.projects.PSObject.Properties[$candidate]
+            if ($entry) {
+                foreach ($f in $mcpFields) {
+                    if ($entry.Value.PSObject.Properties[$f]) {
+                        $preserved[$f] = $entry.Value.$f
+                    }
+                }
+                break
+            }
+        }
+    }
+
     $cfg.PSObject.Properties.Remove('projects')
     $cfg.PSObject.Properties.Remove('githubRepoPaths')
 
@@ -165,11 +184,15 @@ if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
 
     # Pre-accept the workspace path (use forward slashes for consistency with Claude Code)
     $workspaceKey = $Workspace -replace '\\', '/'
+    $projectEntry = [PSCustomObject]@{
+        allowedTools           = @()
+        hasTrustDialogAccepted = $true
+    }
+    foreach ($f in $preserved.Keys) {
+        $projectEntry | Add-Member -MemberType NoteProperty -Name $f -Value $preserved[$f]
+    }
     $cfg | Add-Member -MemberType NoteProperty -Name 'projects' -Value ([PSCustomObject]@{
-        $workspaceKey = [PSCustomObject]@{
-            allowedTools = @()
-            hasTrustDialogAccepted = $true
-        }
+        $workspaceKey = $projectEntry
     }) -Force
 
     $cfg | ConvertTo-Json -Depth 10 | Set-Content $claudeJson -Encoding UTF8
