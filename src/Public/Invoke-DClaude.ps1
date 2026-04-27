@@ -211,7 +211,7 @@ function Invoke-DClaude {
 
     # Append volume mounts from image config and project config
     $projectVolumes = if ($config -and $config.volumes) { @($config.volumes) } else { @() }
-    $volumeArgs = Get-VolumeArgs -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes
+    $volumeArgs = Get-VolumeArgs -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes -ContainerOS $containerOS
     $dockerArgs += $volumeArgs
 
     # Append environment variable passthrough (global + image-level patterns)

@@ -25,20 +25,7 @@ function Initialize-RuntimeVolume {
     if (-not $volumePopulated) {
         Write-Host "dclaude: provisioning runtime volume ($volumeName)..." -ForegroundColor DarkGray
         if ($ContainerOS -eq 'linux') {
-            $script = @'
-set -e
-apt-get update -qq && apt-get install -y -qq curl >/dev/null 2>&1
-ARCH=$(uname -m)
-case "$ARCH" in x86_64) NODE_ARCH=x64;; aarch64) NODE_ARCH=arm64;; armv7l) NODE_ARCH=armv7l;; *) echo "Unsupported: $ARCH" && exit 1;; esac
-mkdir -p /out/node
-curl -fsSL "https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-${NODE_ARCH}.tar.gz" | tar -xz --strip-components=1 -C /out/node
-export PATH="/out/node/bin:$PATH"
-npm install -g @anthropic-ai/claude-code --prefix /out/node
-apt-get install -y -qq git >/dev/null 2>&1
-mkdir -p /out/git/bin /out/git/libexec
-cp -a /usr/bin/git* /out/git/bin/
-cp -a /usr/lib/git-core /out/git/libexec/
-'@
+            $script = 'set -e && apt-get update -qq && apt-get install -y -qq curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x86_64) NODE_ARCH=x64;; aarch64) NODE_ARCH=arm64;; armv7l) NODE_ARCH=armv7l;; *) echo "Unsupported: $ARCH" && exit 1;; esac && mkdir -p /out/node && curl -fsSL "https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-${NODE_ARCH}.tar.gz" | tar -xz --strip-components=1 -C /out/node && export PATH="/out/node/bin:$PATH" && npm install -g @anthropic-ai/claude-code --prefix /out/node && apt-get install -y -qq git >/dev/null 2>&1 && mkdir -p /out/git/bin /out/git/libexec && cp -a /usr/bin/git* /out/git/bin/ && cp -a /usr/lib/git-core /out/git/libexec/'
             docker run --rm -v "${volumeName}:/out" debian:bookworm-slim sh -c $script
         }
         else {

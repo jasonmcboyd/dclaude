@@ -5,7 +5,11 @@ function Get-VolumeArgs {
         [string[]]$ImageVolumes = @(),
 
         [Parameter()]
-        [string[]]$ProjectVolumes = @()
+        [string[]]$ProjectVolumes = @(),
+
+        [Parameter(Mandatory)]
+        [ValidateSet('windows', 'linux')]
+        [string]$ContainerOS
     )
 
     $allVolumes = @()
@@ -22,10 +26,26 @@ function Get-VolumeArgs {
 
     $dockerArgs = @()
 
-    # Expand environment variables and apply default read-only mode once
+    # Expand environment variables, translate container-side paths for the
+    # target OS, and apply default read-only mode.
     $expandedVolumes = foreach ($vol in $allVolumes) {
         $expanded = [Environment]::ExpandEnvironmentVariables($vol)
-        Set-VolumeDefaultMode $expanded
+
+        # Parse volume spec into host:container[:mode].
+        # Windows paths contain drive-letter colons (e.g. C:\foo:C:\bar:rw),
+        # so we match optional drive letters on each side.
+        if ($expanded -match '^([A-Za-z]:)?([^:]+):([A-Za-z]:)?([^:]+)(?::(ro|rw))?$') {
+            $hostPath = "$($Matches[1])$($Matches[2])"
+            $containerPath = "$($Matches[3])$($Matches[4])"
+            $mode = $Matches[5]
+            $containerPath = ConvertTo-ContainerPath -HostPath $containerPath -ContainerOS $ContainerOS
+            $result = "${hostPath}:${containerPath}"
+            if ($mode) { $result += ":$mode" }
+            Set-VolumeDefaultMode $result
+        }
+        else {
+            Set-VolumeDefaultMode $expanded
+        }
     }
 
     # Mount each volume
