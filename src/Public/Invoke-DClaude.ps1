@@ -195,9 +195,9 @@ function Invoke-DClaude {
         $dockerArgs += '/bin/sh'
     }
     else {
-        $entrypointHost = Join-Path $entrypointsDir 'entrypoint.ps1'
+        # Windows containers cannot bind-mount individual files — mount the whole directory.
         $dockerArgs += '-v'
-        $dockerArgs += "${entrypointHost}:C:\mnt\dclaude\entrypoint.ps1:ro"
+        $dockerArgs += "${entrypointsDir}:C:\mnt\dclaude:ro"
         $dockerArgs += '--entrypoint'
         $dockerArgs += 'powershell'
     }

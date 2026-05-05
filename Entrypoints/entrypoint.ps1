@@ -74,7 +74,7 @@ $contextLines = @(
     ''
     '## Key Facts'
     "- The workspace at ``$Workspace`` is mounted from the host path ``$hostPath``."
-    "- The container image is ``$($env:DCLAUDE_IMAGE ?? 'unknown')``."
+    "- The container image is ``$(if ($env:DCLAUDE_IMAGE) { $env:DCLAUDE_IMAGE } else { 'unknown' })``."
     '- Your home directory and .claude config are container-local, with select items symlinked to the host for persistence.'
     '- Paths referenced in CLAUDE.md or other instructions (e.g., project directories, repo paths) may refer to host-only locations that are not mounted in this container.'
     ''
