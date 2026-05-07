@@ -211,9 +211,15 @@ function Invoke-DClaude {
 
     # Append volume mounts from user config, image config, and project config
     $userConfig = Get-DClaudeUserConfig
-    $userVolumes = if ($userConfig -and $userConfig.PSObject.Properties['commonVolumes']) {
-        @($userConfig.commonVolumes)
-    } else { @() }
+    $userVolumes = @()
+    if ($userConfig -and $userConfig.PSObject.Properties['commonVolumes']) {
+        $cv = $userConfig.commonVolumes
+        if ($cv -is [array]) {
+            $userVolumes = @($cv)
+        } elseif ($cv -is [PSCustomObject] -and $cv.PSObject.Properties[$containerOS]) {
+            $userVolumes = @($cv.$containerOS)
+        }
+    }
     $projectVolumes = if ($config -and $config.volumes) { @($config.volumes) } else { @() }
     $volumeArgs = Get-VolumeArgs -UserVolumes $userVolumes -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes -ContainerOS $containerOS
     $dockerArgs += $volumeArgs

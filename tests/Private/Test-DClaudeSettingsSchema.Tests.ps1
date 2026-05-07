@@ -165,6 +165,48 @@ Describe 'Test-DClaudeSettingsSchema' {
             $errors | Should -HaveCount 1
             $errors[0] | Should -BeLike "*volumes*array*"
         }
+
+        It 'accepts commonVolumes as a flat array' {
+            $config = [PSCustomObject]@{ commonVolumes = @('/host:/container:ro') }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 0
+        }
+
+        It 'accepts commonVolumes as a windows/linux object' {
+            $config = [PSCustomObject]@{
+                commonVolumes = [PSCustomObject]@{
+                    windows = @('C:/host:C:/container:ro')
+                    linux   = @('/host:/container:ro')
+                }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 0
+        }
+
+        It 'reports error when commonVolumes is neither array nor object' {
+            $config = [PSCustomObject]@{ commonVolumes = 'not-valid' }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*commonVolumes*"
+        }
+
+        It 'reports error when commonVolumes object has an unknown key' {
+            $config = [PSCustomObject]@{
+                commonVolumes = [PSCustomObject]@{ macos = @('/host:/container') }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*macos*"
+        }
+
+        It 'reports error when commonVolumes.linux is not an array' {
+            $config = [PSCustomObject]@{
+                commonVolumes = [PSCustomObject]@{ linux = 'not-array' }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*linux*array*"
+        }
     }
 
     Context 'multiple errors' {

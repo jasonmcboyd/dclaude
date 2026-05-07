@@ -78,9 +78,25 @@ function Test-DClaudeSettingsSchema {
         $errors += "$Label`: 'volumes' must be an array"
     }
 
-    # Validate top-level commonVolumes
-    if ($Config.PSObject.Properties['commonVolumes'] -and $Config.commonVolumes -isnot [array]) {
-        $errors += "$Label`: 'commonVolumes' must be an array"
+    # Validate top-level commonVolumes (array or {windows:[...], linux:[...]} object)
+    if ($Config.PSObject.Properties['commonVolumes']) {
+        $cv = $Config.commonVolumes
+        if ($cv -is [array]) {
+            # flat array form — valid
+        }
+        elseif ($cv -is [PSCustomObject]) {
+            foreach ($platProp in $cv.PSObject.Properties) {
+                if ($platProp.Name -notin @('windows', 'linux')) {
+                    $errors += "$Label`: commonVolumes key '$($platProp.Name)' is not valid; expected 'windows' or 'linux'"
+                }
+                elseif ($platProp.Value -isnot [array]) {
+                    $errors += "$Label`: commonVolumes.'$($platProp.Name)' must be an array"
+                }
+            }
+        }
+        else {
+            $errors += "$Label`: 'commonVolumes' must be an array or an object with 'windows'/'linux' keys"
+        }
     }
 
     , $errors
