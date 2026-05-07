@@ -2,6 +2,9 @@ function Get-VolumeArgs {
     [CmdletBinding()]
     param(
         [Parameter()]
+        [string[]]$UserVolumes = @(),
+
+        [Parameter()]
         [string[]]$ImageVolumes = @(),
 
         [Parameter()]
@@ -13,6 +16,9 @@ function Get-VolumeArgs {
     )
 
     $allVolumes = @()
+    if ($UserVolumes.Count -gt 0) {
+        $allVolumes += $UserVolumes
+    }
     if ($ImageVolumes.Count -gt 0) {
         $allVolumes += $ImageVolumes
     }

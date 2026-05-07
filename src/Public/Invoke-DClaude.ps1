@@ -209,13 +209,16 @@ function Invoke-DClaude {
     # Append platform-specific mount args (claude config, .claude.json, project dir)
     $dockerArgs += $paths.DockerArgs
 
-    # Append volume mounts from image config and project config
+    # Append volume mounts from user config, image config, and project config
+    $userConfig = Get-DClaudeUserConfig
+    $userVolumes = if ($userConfig -and $userConfig.PSObject.Properties['commonVolumes']) {
+        @($userConfig.commonVolumes)
+    } else { @() }
     $projectVolumes = if ($config -and $config.volumes) { @($config.volumes) } else { @() }
-    $volumeArgs = Get-VolumeArgs -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes -ContainerOS $containerOS
+    $volumeArgs = Get-VolumeArgs -UserVolumes $userVolumes -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes -ContainerOS $containerOS
     $dockerArgs += $volumeArgs
 
     # Append environment variable passthrough (global + image-level patterns)
-    $userConfig = Get-DClaudeUserConfig
     $globalEnvPassthrough = if ($userConfig -and $userConfig.PSObject.Properties['envPassthrough']) {
         @($userConfig.envPassthrough)
     } else { @() }

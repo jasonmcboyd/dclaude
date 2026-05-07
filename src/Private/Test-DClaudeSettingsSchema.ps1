@@ -78,5 +78,10 @@ function Test-DClaudeSettingsSchema {
         $errors += "$Label`: 'volumes' must be an array"
     }
 
+    # Validate top-level commonVolumes
+    if ($Config.PSObject.Properties['commonVolumes'] -and $Config.commonVolumes -isnot [array]) {
+        $errors += "$Label`: 'commonVolumes' must be an array"
+    }
+
     , $errors
 }

@@ -47,8 +47,26 @@ Describe 'Get-VolumeArgs' {
         }
     }
 
-    Context 'merging image and project volumes' {
-        It 'includes both image-level and project-level volumes' {
+    Context 'merging user, image, and project volumes' {
+        It 'includes user-level, image-level, and project-level volumes' {
+            $result = Get-VolumeArgs -UserVolumes @('/usr:/usr-mount') -ImageVolumes @('/img:/img-mount') -ProjectVolumes @('/proj:/proj-mount:rw') -ContainerOS windows
+            $argsString = $result -join ' '
+            $argsString | Should -BeLike '*-v /usr:/usr-mount:ro*'
+            $argsString | Should -BeLike '*-v /img:/img-mount:ro*'
+            $argsString | Should -BeLike '*-v /proj:/proj-mount:rw*'
+        }
+
+        It 'orders user volumes before image and project volumes in DCLAUDE_VOLUMES' {
+            $result = Get-VolumeArgs -UserVolumes @('/usr:/usr-mount') -ImageVolumes @('/img:/img-mount') -ProjectVolumes @('/proj:/proj-mount:rw') -ContainerOS windows
+            $argsString = $result -join ' '
+            $usrIdx = $argsString.IndexOf('/usr:/usr-mount')
+            $imgIdx = $argsString.IndexOf('/img:/img-mount')
+            $projIdx = $argsString.IndexOf('/proj:/proj-mount')
+            $usrIdx | Should -BeLessThan $imgIdx
+            $imgIdx | Should -BeLessThan $projIdx
+        }
+
+        It 'includes both image-level and project-level volumes without user volumes' {
             $result = Get-VolumeArgs -ImageVolumes @('/img:/img-mount') -ProjectVolumes @('/proj:/proj-mount:rw') -ContainerOS windows
             $argsString = $result -join ' '
             $argsString | Should -BeLike '*-v /img:/img-mount:ro*'
