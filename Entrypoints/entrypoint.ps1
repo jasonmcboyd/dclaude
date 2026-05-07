@@ -232,7 +232,7 @@ else {
 
 }
 catch {
-    Write-Host "[dclaude] FATAL: Entrypoint failed: $_" -ForegroundColor Red
+    Write-Host "[dclaude] FATAL at line $($_.InvocationInfo.ScriptLineNumber): $($_.Exception.Message)"
     exit 1
 }
 
