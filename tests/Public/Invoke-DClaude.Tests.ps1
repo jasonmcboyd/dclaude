@@ -1,4 +1,6 @@
 BeforeAll {
+    . "$PSScriptRoot/../../src/Private/DClaudeConstants.ps1"
+    . "$PSScriptRoot/../../src/Private/Read-SettingsFile.ps1"
     . "$PSScriptRoot/../../src/Private/Test-DClaudeSettingsSchema.ps1"
     . "$PSScriptRoot/../../src/Private/Merge-SettingsFiles.ps1"
     . "$PSScriptRoot/../../src/Private/Get-DClaudeConfig.ps1"
@@ -11,7 +13,9 @@ BeforeAll {
     . "$PSScriptRoot/../../src/Private/Get-VolumeArgs.ps1"
     . "$PSScriptRoot/../../src/Private/Get-EnvironmentPassthroughArgs.ps1"
     . "$PSScriptRoot/../../src/Private/Initialize-RuntimeVolume.ps1"
+    . "$PSScriptRoot/../../src/Private/Initialize-DockerCliVolume.ps1"
     . "$PSScriptRoot/../../src/Private/Remove-StaleRuntimeVolumes.ps1"
+    . "$PSScriptRoot/../../src/Private/Write-LaunchSummary.ps1"
     . "$PSScriptRoot/../../src/Public/Invoke-DClaude.ps1"
 
     # Define a docker function so Pester can mock it
@@ -506,17 +510,13 @@ Describe 'Invoke-DClaude' {
 
     Context 'Docker access' {
         BeforeEach {
-            # Override docker mock: simulate populated volume for the check container,
-            # capture args for the actual container launch.
-            Mock docker {
-                $joined = $args -join ' '
-                # Population check: 'docker run --rm -v dclaude-docker-cli-*:/check alpine test -f /check/docker'
-                # or Windows equivalent. Set LASTEXITCODE=0 to indicate volume is populated.
-                if ($args[0] -eq 'run' -and ($joined -match ':/check' -or $joined -match ':C:\\check')) {
-                    $global:LASTEXITCODE = 0
-                    return
+            Mock Initialize-DockerCliVolume {
+                $os = if ($ContainerOS) { $ContainerOS } else { 'linux' }
+                $mp = if ($os -eq 'linux') { '/opt/docker-cli' } else { 'C:/docker-cli' }
+                return [PSCustomObject]@{
+                    VolumeName = "dclaude-docker-cli-$os"
+                    MountPath  = $mp
                 }
-                $script:capturedDockerArgs = $args
             }
         }
 
@@ -528,6 +528,7 @@ Describe 'Invoke-DClaude' {
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*/var/run/docker.sock:/var/run/docker.sock:rw*'
             $argsString | Should -BeLike '*dclaude-docker-cli-linux:/opt/docker-cli:ro*'
+            Should -Invoke Initialize-DockerCliVolume -Times 1 -Exactly
         }
 
         It 'mounts Docker named pipe and CLI volume on Windows when -DockerAccess is specified' {
@@ -538,6 +539,7 @@ Describe 'Invoke-DClaude' {
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*//./pipe/docker_engine://./pipe/docker_engine*'
             $argsString | Should -BeLike '*dclaude-docker-cli-windows:C:/docker-cli:ro*'
+            Should -Invoke Initialize-DockerCliVolume -Times 1 -Exactly
         }
 
         It 'does not mount Docker socket when -DockerAccess is not specified' {
@@ -548,6 +550,16 @@ Describe 'Invoke-DClaude' {
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -Not -BeLike '*docker.sock*'
             $argsString | Should -Not -BeLike '*docker-cli*'
+            Should -Invoke Initialize-DockerCliVolume -Times 0 -Exactly
+        }
+
+        It 'returns early when Initialize-DockerCliVolume fails' {
+            Mock Get-DockerContainerOS { return 'linux' }
+            Mock Initialize-DockerCliVolume { return $null }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess
+
+            Should -Not -Invoke docker
         }
     }
 

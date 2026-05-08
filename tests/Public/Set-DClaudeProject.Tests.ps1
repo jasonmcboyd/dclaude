@@ -1,5 +1,6 @@
 BeforeAll {
     . "$PSScriptRoot/../../src/Private/Read-SettingsFile.ps1"
+    . "$PSScriptRoot/../../src/Private/Save-SettingsFile.ps1"
     . "$PSScriptRoot/../../src/Public/Set-DClaudeProject.ps1"
 }
 

@@ -1,4 +1,5 @@
 BeforeAll {
+    . "$PSScriptRoot/../../src/Private/DClaudeConstants.ps1"
     . "$PSScriptRoot/../../src/Private/Initialize-RuntimeVolume.ps1"
 
     function docker { }

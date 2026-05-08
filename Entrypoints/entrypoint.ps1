@@ -34,8 +34,10 @@ if (Test-Path $hostDir) {
     New-Item -ItemType Directory -Path $claudeDir -Force | Out-Null
 
     # Symlink directories — writes go straight to host.
-    # Note: unlike the Linux entrypoint, we do NOT skip 'plugins' or 'session-env'
-    # because Windows containers share the same OS and path structure as the host.
+    # INTENTIONAL DIVERGENCE from entrypoint.sh: we do NOT skip 'plugins' or
+    # 'session-env' because Windows containers share the same OS and path structure
+    # as the host. See entrypoint.sh for the Linux reasoning (host copies contain
+    # Windows-specific git config and host paths that don't exist in Linux containers).
     # Skip 'projects' — handled below to avoid duplicate session entries in /resume.
     # Skip 'rules' — handled below so we can inject a container context file.
     Get-ChildItem $hostDir -Directory | ForEach-Object {

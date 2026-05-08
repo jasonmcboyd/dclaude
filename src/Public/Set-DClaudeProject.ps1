@@ -81,9 +81,6 @@ function Set-DClaudeProject {
     }
 
     if ($PSCmdlet.ShouldProcess("Project config at '$localPath'", 'Set')) {
-        if (-not (Test-Path $directory)) {
-            New-Item -Path $directory -ItemType Directory -Force | Out-Null
-        }
-        $config | ConvertTo-Json -Depth 10 | Set-Content -Path $localPath -Encoding UTF8
+        Save-SettingsFile -Directory $directory -Config $config -FileName 'settings.local.json'
     }
 }

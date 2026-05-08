@@ -61,10 +61,12 @@ if [ -d "$HOST_DIR" ]; then
     mkdir -p "$CLAUDE_HOME"
 
     # Symlink directories — writes go straight to host.
+    # INTENTIONAL DIVERGENCE from entrypoint.ps1: we skip 'plugins' and 'session-env'
+    # because Linux containers have a different OS from the (Windows) host.
+    # entrypoint.ps1 does NOT skip these because Windows containers share the host OS.
     # Skip 'plugins' — host copy has Windows git config that causes junk folders.
     # Skip 'session-env' — host session environment files reference host paths
-    #   and executables that don't exist inside the container. Not skipped on
-    #   Windows because Windows containers share the same OS and path structure.
+    #   and executables that don't exist inside the container.
     # Skip 'projects' — handled below to avoid duplicate session entries in /resume.
     # Skip 'rules' — handled below so we can inject a container context file.
     for dir in "$HOST_DIR"/*/; do

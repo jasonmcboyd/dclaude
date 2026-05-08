@@ -62,4 +62,20 @@ Describe 'Save-SettingsFile' {
             $content.version | Should -Be 2
         }
     }
+
+    Context 'custom FileName parameter' {
+        It 'writes to the specified filename instead of settings.json' {
+            $config = [PSCustomObject]@{ imageKey = 'pwsh' }
+
+            Save-SettingsFile -Directory $TestDrive -Config $config -FileName 'settings.local.json'
+
+            $filePath = Join-Path $TestDrive 'settings.local.json'
+            $filePath | Should -Exist
+            $content = Get-Content $filePath -Raw | ConvertFrom-Json
+            $content.imageKey | Should -Be 'pwsh'
+
+            $defaultPath = Join-Path $TestDrive 'settings.json'
+            $defaultPath | Should -Not -Exist
+        }
+    }
 }
