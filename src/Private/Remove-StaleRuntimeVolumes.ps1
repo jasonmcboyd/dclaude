@@ -16,7 +16,7 @@ function Remove-StaleRuntimeVolumes {
         $containers = docker ps -a --filter "volume=$vol" --format '{{.ID}}' 2>$null
         if ($containers) { continue }
 
-        Write-Host "dclaude: removing stale runtime volume $vol" -ForegroundColor DarkGray
+        Write-Host "[dclaude] Removing stale runtime volume $vol" -ForegroundColor DarkGray
         docker volume rm $vol 2>$null | Out-Null
     }
 }

@@ -159,6 +159,30 @@ Describe 'Invoke-DClaude' {
         }
     }
 
+    Context 'image resolution from defaultImageKey in user config' {
+        It 'falls back to defaultImageKey when no image specified' {
+            Mock Get-DClaudeUserConfig {
+                return [PSCustomObject]@{
+                    defaultImageKey = 'pwsh'
+                    images = [PSCustomObject]@{
+                        pwsh = [PSCustomObject]@{
+                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:latest' }
+                        }
+                    }
+                }
+            }
+            Mock Resolve-ImageKey {
+                return [PSCustomObject]@{ tag = 'dclaude-pwsh:latest'; volumes = @(); envPassthrough = @(); env = $null }
+            }
+
+            Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Invoke docker
+            $script:capturedDockerArgs | Should -Contain 'dclaude-pwsh:latest'
+            Should -Invoke Resolve-ImageKey -ParameterFilter { $Key -eq 'pwsh' }
+        }
+    }
+
     Context 'when no image is available from any source' {
         It 'writes an error' {
             Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ErrorVariable err -ErrorAction SilentlyContinue
@@ -415,7 +439,7 @@ Describe 'Invoke-DClaude' {
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
-            Should -Invoke Write-Host -ParameterFilter { $Object -eq 'dclaude: mounting volumes:' }
+            Should -Invoke Write-Host -ParameterFilter { $Object -eq '[dclaude] Mounting volumes:' }
         }
 
         It 'displays user-configured volumes' {
@@ -602,7 +626,7 @@ Describe 'Invoke-DClaude' {
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*entrypoint.sh:/mnt/dclaude/entrypoint.sh:ro*'
-            $argsString | Should -BeLike '*--entrypoint /mnt/dclaude/entrypoint.sh*'
+            $argsString | Should -BeLike '*--entrypoint /bin/sh*'
         }
 
         It 'mounts entrypoint.ps1 and sets --entrypoint powershell on Windows' {

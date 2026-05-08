@@ -73,6 +73,11 @@ function Test-DClaudeSettingsSchema {
         $errors += "$Label`: 'imageKey' must be a string"
     }
 
+    # Validate top-level defaultImageKey
+    if ($Config.PSObject.Properties['defaultImageKey'] -and $Config.defaultImageKey -isnot [string]) {
+        $errors += "$Label`: 'defaultImageKey' must be a string"
+    }
+
     # Validate top-level volumes
     if ($Config.PSObject.Properties['volumes'] -and $Config.volumes -isnot [array]) {
         $errors += "$Label`: 'volumes' must be an array"

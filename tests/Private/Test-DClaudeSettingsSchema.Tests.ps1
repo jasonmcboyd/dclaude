@@ -159,6 +159,19 @@ Describe 'Test-DClaudeSettingsSchema' {
             $errors[0] | Should -BeLike "*imageKey*string*"
         }
 
+        It 'accepts a valid defaultImageKey string' {
+            $config = [PSCustomObject]@{ defaultImageKey = 'pwsh' }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 0
+        }
+
+        It 'reports error when defaultImageKey is not a string' {
+            $config = [PSCustomObject]@{ defaultImageKey = 42 }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*defaultImageKey*string*"
+        }
+
         It 'reports error when top-level volumes is not an array' {
             $config = [PSCustomObject]@{ volumes = 'not-array' }
             $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'

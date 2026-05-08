@@ -120,6 +120,13 @@ function Invoke-DClaude {
         }
     }
 
+    if (-not $imageTag -and -not $imageKeyToResolve) {
+        $uc = Get-DClaudeUserConfig
+        if ($uc -and $uc.PSObject.Properties['defaultImageKey']) {
+            $imageKeyToResolve = $uc.defaultImageKey
+        }
+    }
+
     if ($imageKeyToResolve) {
         $imageName = $imageKeyToResolve
         $resolved = Resolve-ImageKey $imageKeyToResolve $containerOS
@@ -131,7 +138,7 @@ function Invoke-DClaude {
     }
 
     if (-not $imageTag) {
-        Write-Error "No image specified. Pass -Image, -ImageKey, or set 'image' or 'imageKey' in your project .dclaude/settings.json."
+        Write-Error "No image specified. Pass -Image, -ImageKey, set 'image'/'imageKey' in project .dclaude/settings.json, or set 'defaultImageKey' in ~/.dclaude/settings.json."
         return
     }
 
@@ -320,7 +327,7 @@ function Invoke-DClaude {
             $volumePopulated = ($LASTEXITCODE -eq 0)
         }
         if (-not $volumePopulated) {
-            Write-Host "dclaude: provisioning Docker CLI volume ($cliVolume)..." -ForegroundColor DarkGray
+            Write-Host "[dclaude] Provisioning Docker CLI volume ($cliVolume)..." -ForegroundColor DarkGray
             if ($containerOS -eq 'linux') {
                 $script = @'
 apk add --no-cache curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x86_64) GOARCH=amd64;; aarch64) GOARCH=arm64;; *) GOARCH=$ARCH;; esac && curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.5.1.tgz" | tar -xz --strip-components=1 -C /out docker/docker && mkdir -p /out/cli-plugins && curl -fsSL -o /out/cli-plugins/docker-compose "https://github.com/docker/compose/releases/download/v2.33.1/docker-compose-linux-${ARCH}" && chmod +x /out/cli-plugins/docker-compose && curl -fsSL -o /out/cli-plugins/docker-buildx "https://github.com/docker/buildx/releases/download/v0.21.1/buildx-v0.21.1.linux-${GOARCH}" && chmod +x /out/cli-plugins/docker-buildx
@@ -360,8 +367,16 @@ apk add --no-cache curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x
         $dockerArgs += $ClaudeArgs
     }
 
+    # Display image selection
+    if ($imageName) {
+        Write-Host "[dclaude] Image: $imageName ($imageTag)" -ForegroundColor DarkGray
+    }
+    else {
+        Write-Host "[dclaude] Image: $imageTag" -ForegroundColor DarkGray
+    }
+
     # Display effective mounts before launching
-    Write-Host "dclaude: mounting volumes:" -ForegroundColor DarkGray
+    Write-Host "[dclaude] Mounting volumes:" -ForegroundColor DarkGray
     for ($i = 0; $i -lt $dockerArgs.Count; $i++) {
         if ($dockerArgs[$i] -eq '-v' -and ($i + 1) -lt $dockerArgs.Count) {
             Write-Host "  $($dockerArgs[$i + 1])" -ForegroundColor DarkGray
@@ -376,7 +391,7 @@ apk add --no-cache curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x
         }
     }
     if ($envVars.Count -gt 0) {
-        Write-Host "dclaude: environment variables:" -ForegroundColor DarkGray
+        Write-Host "[dclaude] Environment variables:" -ForegroundColor DarkGray
         foreach ($envVar in $envVars) {
             Write-Host "  $envVar" -ForegroundColor DarkGray
         }
