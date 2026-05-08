@@ -422,8 +422,7 @@ dotnet nuget add source "https://pkgs.dev.azure.com/myorg/_packaging/myfeed/nuge
 
 ### Known Limitations
 
-- **Shell assumption:** Linux scripts must be `*.sh` (Bash); Windows scripts must be `*.ps1` (PowerShell). There is no shebang-based dispatch — future versions may support arbitrary script languages.
-- **Entrypoint coupling:** Init script execution is implemented in the dclaude-provided entrypoints (`entrypoint.sh` / `entrypoint.ps1`). Custom base images that don't use these entrypoints will not run init scripts automatically. A decoupled mechanism (e.g., entrypoint wrapper) may be added in the future.
+- **Shell assumption:** Linux scripts must be `*.sh` (Bash); Windows scripts must be `*.ps1` (PowerShell). There is no shebang-based dispatch.
 - **Image name required:** Image-specific init directories (e.g., `dotnet-core.init.d/`) only work when the image is resolved via `-ImageKey` or a project config `imageKey`. When using `-Image` with a direct tag, only `common.init.d/` scripts run.
 
 ## Private Files
