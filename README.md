@@ -20,7 +20,7 @@ Windows container support is particularly useful for workloads that require the 
 
 - Docker (Windows, macOS, or Linux)
 - PowerShell 5.1 or later
-- `ANTHROPIC_API_KEY` set in your environment
+- An API key or cloud credentials: `ANTHROPIC_API_KEY` for direct API access, or Vertex AI / Bedrock environment variables for cloud-hosted models
 - Claude config at `~/.claude` (created by running `claude` once on the host)
 
 ### Windows Containers Setup
@@ -112,15 +112,28 @@ Defines named images and their per-platform volume mounts. Lives in your home di
 
 ```json
 {
+  "defaultImageKey": "pwsh",
   "envPassthrough": ["AZURE_DEVOPS_PAT"],
+  "commonVolumes": {
+    "windows": ["%USERPROFILE%\\.nuget:C:/Users/ContainerAdministrator/.nuget"],
+    "linux": ["%HOME%/.nuget:/root/.nuget"]
+  },
   "images": {
     "pwsh": {
       "windows": {
-        "tag": "dclaude-pwsh:latest",
-        "volumes": ["%USERPROFILE%\\.nuget:C:/Users/ContainerAdministrator/.nuget"]
+        "tag": "dclaude-pwsh:latest"
       },
       "linux": {
         "tag": "dclaude-pwsh-linux:latest"
+      }
+    },
+    "vertex": {
+      "linux": {
+        "tag": "python:3.12-slim",
+        "env": {
+          "CLOUD_ML_REGION": "us-east1",
+          "ANTHROPIC_VERTEX_PROJECT_ID": "my-project"
+        }
       }
     },
     "dotnet-core": {
@@ -130,7 +143,6 @@ Defines named images and their per-platform volume mounts. Lives in your home di
       },
       "linux": {
         "tag": "dclaude-dotnet-core-linux:latest",
-        "volumes": ["%HOME%/.nuget:/root/.nuget"],
         "envPassthrough": ["NUGET_*"]
       }
     }
@@ -142,12 +154,15 @@ Each key under `images` is an image name you can pass to `-ImageKey`. The value 
 
 | Field | Required | Description |
 |---|---|---|
+| `defaultImageKey` | No | Default image key used when no image is specified by `-Image`, `-ImageKey`, or project config. Allows `dclaude` to run with zero arguments from any directory. |
+| `commonVolumes` | No | Volume mounts applied to **all** images. Either an array of mount strings, or an object with `windows`/`linux` keys for OS-specific mounts. Mounted read-only by default. |
+| `envPassthrough` | No | Array of environment variable names or glob patterns forwarded to **all** images. `ANTHROPIC_*`, `CLAUDE_CODE_*`, and `CLOUD_ML_*` are always forwarded regardless of this setting. |
 | `images.<name>.windows` | No* | Windows platform configuration. |
 | `images.<name>.linux` | No* | Linux platform configuration. |
 | `images.<name>.<platform>.tag` | Yes | Docker image tag to run. |
 | `images.<name>.<platform>.volumes` | No | Array of volume mounts in `host:container` format. Mounted read-only by default; append `:rw` to make writable. Environment variables are expanded at runtime via .NET's `ExpandEnvironmentVariables`. Use `%VAR%` syntax — this works cross-platform. |
+| `images.<name>.<platform>.env` | No | Object of static environment variables injected into the container (e.g., `{"CLOUD_ML_REGION": "us-east1"}`). Use for constants that don't exist on the host — for forwarding host variables, use `envPassthrough` instead. |
 | `images.<name>.<platform>.envPassthrough` | No | Array of environment variable names or glob patterns (e.g. `NUGET_*`) to forward from the host into the container. Merged with global `envPassthrough`. |
-| `envPassthrough` | No | Top-level array of environment variable names or glob patterns forwarded to **all** images. `ANTHROPIC_*`, `CLAUDE_CODE_*`, and `CLOUD_ML_*` are always forwarded regardless of this setting. |
 
 *At least one platform must be defined per entry. `Invoke-DClaude` auto-detects the current Docker container OS and selects the matching platform.
 
@@ -205,6 +220,7 @@ When `dclaude` runs with no parameters, image resolution follows this priority o
 2. `-ImageKey` parameter
 3. `image` field in project config
 4. `imageKey` field in project config (resolved through user config)
+5. `defaultImageKey` field in user config (`~/.dclaude/settings.json`)
 
 ## Managing Images
 
@@ -289,10 +305,6 @@ If you need additional tools (az, kubectl, terraform, etc.), install them in you
 
 The module is published to [PowerShell Gallery](https://www.powershellgallery.com/packages/dclaude) via GitHub Actions. Pushing a version tag (e.g. `v0.15.1`) triggers the `publish-release.yml` workflow, which generates the module manifest and publishes to PSGallery automatically.
 
-## CI/CD and Releases
-
-The module is published to [PowerShell Gallery](https://www.powershellgallery.com/packages/dclaude) via GitHub Actions. Pushing a version tag (e.g. `v0.15.1`) triggers the `publish-release.yml` workflow, which generates the module manifest and publishes to PSGallery automatically.
-
 ## What Gets Mounted
 
 Every container run by `dclaude` receives these mounts automatically:
@@ -302,9 +314,9 @@ Every container run by `dclaude` receives these mounts automatically:
 | `$Path` (working dir) | Host path as-is | Translated host path (e.g. `/c/Users/you/repos/myproject`) | read-write | Project files |
 | `~/.claude` | `C:/mnt/host-claude` | `/mnt/host-claude` | read-write | Claude settings staging; entrypoint symlinks into `~/.claude` |
 | Runtime volume | `C:\dclaude-runtime` | `/opt/dclaude-runtime` | read-only | Node.js + Claude Code |
-| Entrypoint script | `C:\mnt\dclaude\entrypoint.ps1` | `/mnt/dclaude/entrypoint.sh` | read-only | Container init from host module |
+| Entrypoint script | `C:\mnt\dclaude` (directory) | `/mnt/dclaude/entrypoint.sh` (file) | read-only | Container init from host module |
 
-Additional volume mounts are layered from two sources: image-level volumes defined in the matching platform block of the user config, and project-level volumes from the `volumes` array in the project config. Both sets are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). The `ANTHROPIC_API_KEY` environment variable is forwarded to the container if set on the host. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.
+Additional volume mounts are layered from three sources: `commonVolumes` from user config (applied to all images), image-level `volumes` from the matching platform block, and project-level `volumes` from the project config. All are applied together and are **read-only by default**. To make a volume writable, append `:rw` to the mount string (e.g., `"/path/on/host:/path/in/container:rw"`). Environment variables matching `ANTHROPIC_*`, `CLAUDE_CODE_*`, and `CLOUD_ML_*` are always forwarded; additional patterns can be configured via `envPassthrough`. The container OS is auto-detected from `docker info`; the matching platform block is selected and container paths are set accordingly.
 
 ### Session Continuity and `/resume`
 
@@ -331,7 +343,7 @@ This mounts the host's Docker socket or named pipe into the container:
 | Linux / macOS | `/var/run/docker.sock:/var/run/docker.sock:rw` |
 | Windows | `//./pipe/docker_engine://./pipe/docker_engine` |
 
-The switch validates that the socket or pipe exists before launching the container and errors if Docker is not available on the host.
+No pre-existence check is performed on the socket or pipe — Docker Desktop resolves paths internally, so host-side checks (e.g., `Test-Path` on the WSL socket path) can give false negatives even when the mount works.
 
 **Security note:** Mounting the Docker socket gives Claude full access to the host's Docker daemon. This effectively grants root-equivalent access to the host — Claude can start privileged containers, mount arbitrary host paths, etc. Only use `-DockerAccess` when you need it and understand the implications.
 
