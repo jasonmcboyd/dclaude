@@ -523,7 +523,7 @@ Describe 'Invoke-DClaude' {
         It 'mounts Docker socket and CLI volume on Linux when -DockerAccess is specified' {
             Mock Get-DockerContainerOS { return 'linux' }
 
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess -Force
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*/var/run/docker.sock:/var/run/docker.sock:rw*'
@@ -534,7 +534,7 @@ Describe 'Invoke-DClaude' {
         It 'mounts Docker named pipe and CLI volume on Windows when -DockerAccess is specified' {
             Mock Get-DockerContainerOS { return 'windows' }
 
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess -Force
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*//./pipe/docker_engine://./pipe/docker_engine*'
@@ -557,9 +557,25 @@ Describe 'Invoke-DClaude' {
             Mock Get-DockerContainerOS { return 'linux' }
             Mock Initialize-DockerCliVolume { return $null }
 
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess -Force
 
             Should -Not -Invoke docker
+        }
+
+        It 'prompts for confirmation without -Force (non-interactive throws)' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            # In non-interactive mode, ShouldContinue throws — proving the prompt fires
+            { Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess } |
+                Should -Throw '*NonInteractive*'
+        }
+
+        It 'skips confirmation prompt when -Force is specified' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess -Force
+
+            Should -Invoke docker
         }
     }
 

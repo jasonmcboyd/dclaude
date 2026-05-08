@@ -98,7 +98,8 @@ dclaude
 | `-Path` | `string` | No | Directory to mount as the workspace. Defaults to the current directory. |
 | `-ClaudeConfigPath` | `string` | No | Path to the Claude config directory to mount into the container. Defaults to `~/.claude`. |
 | `-ClaudeArgs` | `string[]` | No | Any additional arguments passed through to the `claude` entrypoint inside the container (e.g., `--resume`). Use `--` to separate from dclaude parameters. |
-| `-DockerAccess` | `switch` | No | Mounts the Docker socket (Linux) or named pipe (Windows) into the container, allowing Claude to run Docker commands. See [Docker Access](#docker-access) below. |
+| `-DockerAccess` | `switch` | No | Mounts the Docker socket (Linux) or named pipe (Windows) into the container, allowing Claude to run Docker commands. Prompts for confirmation. See [Docker Access](#docker-access) below. |
+| `-Force` | `switch` | No | Suppresses the `-DockerAccess` confirmation prompt. Has no effect without `-DockerAccess`. |
 
 When neither `-Image` nor `-ImageKey` is specified, the image is resolved from the project config file (`.dclaude/settings.json`) in the working directory.
 
@@ -333,7 +334,8 @@ The result is that `/resume` works across container runs and across restarts wit
 Use the `-DockerAccess` switch to let Claude build images, run containers, or interact with Docker inside the container:
 
 ```powershell
-dclaude -DockerAccess
+dclaude -DockerAccess          # prompts for confirmation
+dclaude -DockerAccess -Force   # skips the prompt
 ```
 
 This mounts the host's Docker socket or named pipe into the container:

@@ -28,7 +28,11 @@
 
 .PARAMETER DockerAccess
     Mounts the Docker socket (Linux) or named pipe (Windows) into the container,
-    allowing Claude to run Docker commands. Requires Docker to be accessible on the host.
+    allowing Claude to run Docker commands. Prompts for confirmation due to the
+    security implications (root-equivalent host access). Use -Force to skip the prompt.
+
+.PARAMETER Force
+    Suppresses the Docker access confirmation prompt. Has no effect without -DockerAccess.
 
 .EXAMPLE
     Invoke-DClaude -Image 'python:3.12-slim'
@@ -68,7 +72,9 @@ function Invoke-DClaude {
         [Parameter(ValueFromRemainingArguments)]
         [string[]]$ClaudeArgs,
 
-        [switch]$DockerAccess
+        [switch]$DockerAccess,
+
+        [switch]$Force
     )
 
     # Intercept --help / -h when it's the only remaining argument
@@ -84,6 +90,18 @@ function Invoke-DClaude {
     if ($containerOS -notin @('windows', 'linux')) {
         Write-Error "Unsupported Docker OS type '$containerOS'. Only 'windows' and 'linux' are supported."
         return
+    }
+
+    # Confirm Docker access before doing any provisioning work
+    if ($DockerAccess -and -not $Force) {
+        $warning = @(
+            'Docker socket access grants the container full control of the host Docker daemon.'
+            'This is effectively root-equivalent access: the container can start privileged'
+            'containers, mount arbitrary host paths, and access host resources.'
+        ) -join ' '
+        if (-not $PSCmdlet.ShouldContinue($warning, 'Docker Access')) {
+            return
+        }
     }
 
     # Resolve working directory to absolute path
