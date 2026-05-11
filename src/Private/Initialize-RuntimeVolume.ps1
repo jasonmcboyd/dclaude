@@ -44,7 +44,7 @@ function Initialize-RuntimeVolume {
             $minGitVersion = $script:DClaudeVersions.MinGit
             $minGitTag = "v$minGitVersion"
             $minGitFile = "MinGit-$($minGitVersion.Replace('.windows.', '.'))-64-bit.zip"
-            $script = ('cd C:\out && curl -sLo node.zip https://nodejs.org/dist/v__NODE__/node-v__NODE__-win-x64.zip && tar -xf node.zip && ren node-v__NODE__-win-x64 node && del node.zip && curl -sLo mingit.zip https://github.com/git-for-windows/git/releases/download/__MINGIT_TAG__/__MINGIT_FILE__ && mkdir mingit && tar -xf mingit.zip -C mingit && del mingit.zip && set PATH=C:\out\node;%PATH% && C:\out\node\npm install -g @anthropic-ai/claude-code --prefix C:\out\node').Replace('__NODE__', $nodeVersion).Replace('__MINGIT_TAG__', $minGitTag).Replace('__MINGIT_FILE__', $minGitFile)
+            $script = ('cd C:\out && curl -sLo node.zip https://nodejs.org/dist/v__NODE__/node-v__NODE__-win-x64.zip && tar -xf node.zip && ren node-v__NODE__-win-x64 node && del node.zip && curl -sLo mingit.zip https://github.com/git-for-windows/git/releases/download/__MINGIT_TAG__/__MINGIT_FILE__ && mkdir mingit && tar -xf mingit.zip -C mingit && del mingit.zip && set PATH=C:\out\node;%PATH% && C:\out\node\npm install -g @anthropic-ai/claude-code --prefix C:\out\node && icacls C:\out /grant Everyone:(OI)(CI)F /t /q').Replace('__NODE__', $nodeVersion).Replace('__MINGIT_TAG__', $minGitTag).Replace('__MINGIT_FILE__', $minGitFile)
             Write-Verbose "dclaude: provisioning image: $provisionImage"
             Write-Verbose "dclaude: provisioning script: $script"
             docker run --rm -v "${volumeName}:C:\out" $provisionImage cmd /c $script | Out-Host

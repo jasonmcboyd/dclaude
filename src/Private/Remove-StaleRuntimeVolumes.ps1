@@ -17,6 +17,17 @@ function Remove-StaleRuntimeVolumes {
         if ($containers) { continue }
 
         Write-Host "[dclaude] Removing stale runtime volume $vol" -ForegroundColor DarkGray
-        docker volume rm $vol 2>$null | Out-Null
+        # MinGit files carry restrictive ACLs that prevent the Docker daemon from deleting
+        # the volume's VHD backing directory. Changing ACLs inside the container doesn't
+        # reliably propagate to the daemon's view, so instead take ownership and delete
+        # the content from inside a container — the daemon then removes an empty directory.
+        if ($vol -match '-windows-') {
+            docker run --rm -v "${vol}:C:\vol" $script:DClaudeImages.ProvisionWindows `
+                cmd /c "takeown /f C:\vol /r /d y >nul 2>&1 & icacls C:\vol /grant ContainerAdministrator:(OI)(CI)F /t /q >nul 2>&1 & rd /s /q C:\vol\mingit 2>nul & rd /s /q C:\vol\node 2>nul & exit 0" 2>$null | Out-Null
+        }
+        $rmOutput = docker volume rm $vol 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "[dclaude] WARN: Could not remove $vol`: $rmOutput" -ForegroundColor Yellow
+        }
     }
 }

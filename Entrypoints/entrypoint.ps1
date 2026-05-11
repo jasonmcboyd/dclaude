@@ -25,7 +25,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     git config --global --add safe.directory ($Workspace -replace '\\', '/')
 }
 else {
-    Write-Host "[dclaude] WARN: git is not installed in this image. Some Claude Code features may not work." -ForegroundColor Yellow
+    Write-Host "[dclaude] WARN: git is not installed in this image. Some Claude Code features may not work."
 }
 
 # Selectively link from the host .claude directory.
@@ -209,7 +209,7 @@ $projectTarget = "$claudeDir\projects\$containerKey"
 if (Test-Path $projectTarget) {
     # Already bind-mounted by the launcher — nothing to do.
     $sessionCount = @(Get-ChildItem $projectTarget -Filter '*.jsonl' -ErrorAction SilentlyContinue).Count
-    Write-Host "[dclaude] Project dir mounted with $sessionCount session(s)" -ForegroundColor DarkGray
+    Write-Host "[dclaude] Project dir mounted with $sessionCount session(s)"
 }
 else {
     $hostProjectsDir = "$hostDir\projects"
@@ -225,7 +225,7 @@ else {
         New-Item -ItemType Directory -Path $containerProjectsDir -Force | Out-Null
         New-Item -ItemType SymbolicLink -Path "$containerProjectsDir\$containerKey" -Target $hostProjectDir -Force | Out-Null
         $sessionCount = @(Get-ChildItem $hostProjectDir -Filter '*.jsonl' -ErrorAction SilentlyContinue).Count
-        Write-Host "[dclaude] Linked $sessionCount session(s) from $hostProjectDir" -ForegroundColor DarkGray
+        Write-Host "[dclaude] Linked $sessionCount session(s) from $hostProjectDir"
     }
     else {
         Write-Warning "[dclaude] No DCLAUDE_HOST_PATH or no host projects dir (DCLAUDE_HOST_PATH='$hostPath')"
@@ -240,7 +240,7 @@ catch {
 
 # Link Docker CLI from the provisioned volume (mounted by -DockerAccess),
 # but only if the image doesn't already have docker installed.
-Write-Host "[dclaude] Setting up Docker CLI..." -ForegroundColor DarkGray
+Write-Host "[dclaude] Setting up Docker CLI..."
 $dockerCliPath = 'C:\docker-cli'
 if (-not (Get-Command docker -ErrorAction SilentlyContinue) -and (Test-Path "$dockerCliPath\docker.exe")) {
     $env:PATH = "$dockerCliPath;$env:PATH"
@@ -250,25 +250,25 @@ if (-not (Get-Command docker -ErrorAction SilentlyContinue) -and (Test-Path "$do
         $pluginsDst = "$env:USERPROFILE\.docker\cli-plugins"
         New-Item -ItemType Directory -Path $pluginsDst -Force | Out-Null
         Get-ChildItem $pluginsSrc -File | ForEach-Object {
-            Write-Host "[dclaude] Linking docker plugin: $($_.Name)" -ForegroundColor DarkGray
+            Write-Host "[dclaude] Linking docker plugin: $($_.Name)"
             New-Item -ItemType SymbolicLink -Path "$pluginsDst\$($_.Name)" -Target $_.FullName -Force | Out-Null
         }
     }
 }
 
 # Run init scripts (user common → user image → project common → project image)
-Write-Host "[dclaude] Running init scripts..." -ForegroundColor DarkGray
+Write-Host "[dclaude] Running init scripts..."
 $initBase = 'C:\mnt\init.d'
 foreach ($initDir in @("$initBase\user-common", "$initBase\user-image", "$initBase\project-common", "$initBase\project-image")) {
     if (Test-Path $initDir) {
         Get-ChildItem $initDir -Filter '*.ps1' | Sort-Object Name | ForEach-Object {
-            Write-Host "[dclaude] Running init script: $($_.Name)" -ForegroundColor DarkGray
+            Write-Host "[dclaude] Running init script: $($_.Name)"
             . $_.FullName
         }
     }
 }
 
-Write-Host "[dclaude] Launching claude..." -ForegroundColor DarkGray
+Write-Host "[dclaude] Launching claude..."
 # Reset ErrorActionPreference so claude.cmd stderr does not trigger
 # a PowerShell terminating error under the script-level 'Stop' preference.
 $ErrorActionPreference = 'Continue'
