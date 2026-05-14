@@ -12,6 +12,12 @@ function Remove-StaleRuntimeVolumes {
     foreach ($vol in $allVolumes) {
         if ($vol -like "*$currentSuffix") { continue }
 
+        # Leave volumes from newer versions alone — the user may have rolled back
+        # and we don't want to force a re-provision on upgrade.
+        if ($vol -match '-v(\d+\.\d+\.\d+)$') {
+            if ([version]$Matches[1] -gt $CurrentVersion) { continue }
+        }
+
         # Check if any container (running or stopped) references this volume
         $containers = docker ps -a --filter "volume=$vol" --format '{{.ID}}' 2>$null
         if ($containers) { continue }
