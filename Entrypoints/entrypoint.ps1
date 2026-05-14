@@ -1,8 +1,10 @@
 $ErrorActionPreference = 'Stop'
+if ($env:DCLAUDE_VERBOSE) { $VerbosePreference = 'Continue' }
 
 try {
 
 # --- Runtime volume PATH setup ---
+Write-Verbose "[dclaude] Setting up runtime paths..."
 $runtimePath = if ($env:DCLAUDE_RUNTIME) { $env:DCLAUDE_RUNTIME } else { 'C:\dclaude-runtime' }
 $env:PATH = "$runtimePath\node;$runtimePath\mingit\cmd;$env:PATH"
 
@@ -19,6 +21,7 @@ $claudeJson = "$env:USERPROFILE\.claude.json"
 # Workspace path: use host-path mount if provided, fall back to legacy C:\workspace
 $Workspace = if ($env:DCLAUDE_WORKSPACE) { $env:DCLAUDE_WORKSPACE } else { 'C:\workspace' }
 
+Write-Verbose "[dclaude] Configuring git safe.directory..."
 # Trust the workspace directory to avoid "dubious ownership" errors from git.
 # This runs here instead of the Dockerfile because the workspace path is dynamic.
 if (Get-Command git -ErrorAction SilentlyContinue) {
@@ -28,6 +31,7 @@ else {
     Write-Host "[dclaude] WARN: git is not installed in this image. Some Claude Code features may not work."
 }
 
+Write-Verbose "[dclaude] Symlinking .claude config..."
 # Selectively link from the host .claude directory.
 # Symlink dirs and files so writes (e.g. OAuth token refresh) persist to host.
 if (Test-Path $hostDir) {
@@ -56,6 +60,7 @@ if (Test-Path $hostDir) {
     }
 }
 
+Write-Verbose "[dclaude] Setting up rules directory..."
 # Create rules directory as a real dir (not symlink) so we can add container
 # context without it reaching the host. Symlink individual host rules files in.
 $containerRulesDir = "$claudeDir\rules"
@@ -67,6 +72,7 @@ if (Test-Path $hostRulesDir) {
     }
 }
 
+Write-Verbose "[dclaude] Generating container context..."
 # Generate container context rules file so Claude knows it's in a container.
 $hostPath = $env:DCLAUDE_HOST_PATH
 $contextLines = @(
@@ -148,6 +154,7 @@ if ($envList) {
 
 $contextLines -join "`n" | Set-Content "$containerRulesDir\dclaude-context.md" -Encoding UTF8
 
+Write-Verbose "[dclaude] Sanitizing .claude.json..."
 # Sanitize .claude.json — strip Windows paths and pre-accept container workspace,
 # but preserve MCP server config from the host project entry.
 $claudeJsonInDir = "$claudeDir\.claude.json"
@@ -200,6 +207,7 @@ if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
     $cfg | ConvertTo-Json -Depth 10 | Set-Content $claudeJson -Encoding UTF8
 }
 
+Write-Verbose "[dclaude] Linking project session history..."
 # Link host conversation history so /resume finds conversations from the host.
 # The project dir may already be bind-mounted by Invoke-DClaude (preferred, since
 # bind mounts appear as real directories to readdir). Fall back to a symlink if not.
@@ -263,7 +271,13 @@ foreach ($initDir in @("$initBase\user-common", "$initBase\user-image", "$initBa
     if (Test-Path $initDir) {
         Get-ChildItem $initDir -Filter '*.ps1' | Sort-Object Name | ForEach-Object {
             Write-Host "[dclaude] Running init script: $($_.Name)"
-            . $_.FullName
+            try {
+                . $_.FullName
+                Write-Verbose "[dclaude] Init script complete: $($_.Name)"
+            }
+            catch {
+                Write-Warning "[dclaude] Init script '$($_.Name)' failed: $($_.Exception.Message)"
+            }
         }
     }
 }

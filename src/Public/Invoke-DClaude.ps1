@@ -277,6 +277,10 @@ function Invoke-DClaude {
     $dockerArgs += 'DCLAUDE_CONTAINER=1'
     $dockerArgs += '-e'
     $dockerArgs += "DCLAUDE_IMAGE=$imageTag"
+    if ($VerbosePreference -eq 'Continue') {
+        $dockerArgs += '-e'
+        $dockerArgs += 'DCLAUDE_VERBOSE=1'
+    }
 
     # Inject env constants from image config
     if ($imageEnv) {
