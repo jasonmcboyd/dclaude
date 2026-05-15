@@ -197,6 +197,16 @@ function Invoke-DClaude {
         $entrypointsDir = Join-Path (Split-Path (Split-Path $PSScriptRoot)) 'Entrypoints'
     }
 
+    # Windows containers: always stage entrypoint.ps1 to a local LOCALAPPDATA cache
+    # before mounting. This guarantees the file has no OneDrive reparse point attributes
+    # that would prevent Hyper-V from bind-mounting it into the container.
+    if ($containerOS -eq 'windows') {
+        $entrypointCache = Join-Path $env:LOCALAPPDATA "dclaude\.entrypoints\v$moduleVersion"
+        New-Item -ItemType Directory -Path $entrypointCache -Force | Out-Null
+        Copy-Item (Join-Path $entrypointsDir 'entrypoint.ps1') $entrypointCache -Force
+        $entrypointsDir = $entrypointCache
+    }
+
     # Build docker run arguments
     $leafName = (Split-Path $resolvedPath -Leaf) -replace '[^a-zA-Z0-9_.-]', '-'
     $containerName = "dclaude-${leafName}-$(Get-Random -Maximum 9999)"

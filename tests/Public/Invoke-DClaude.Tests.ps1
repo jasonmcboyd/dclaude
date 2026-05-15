@@ -657,7 +657,7 @@ Describe 'Invoke-DClaude' {
             $argsString | Should -BeLike '*--entrypoint /bin/sh*'
         }
 
-        It 'mounts entrypoint.ps1 and sets --entrypoint powershell on Windows' {
+        It 'mounts entrypoint.ps1 from LOCALAPPDATA cache and sets --entrypoint powershell on Windows' {
             Mock Get-DockerContainerOS { return 'windows' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
@@ -665,6 +665,7 @@ Describe 'Invoke-DClaude' {
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*entrypoint.ps1*'
             $argsString | Should -BeLike '*--entrypoint powershell*'
+            $argsString | Should -BeLike "*$env:LOCALAPPDATA*\.entrypoints\*"
         }
 
         It 'adds -NoProfile -File entrypoint.ps1 after image tag on Windows' {
