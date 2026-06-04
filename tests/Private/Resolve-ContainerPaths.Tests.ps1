@@ -21,23 +21,18 @@ Describe 'Resolve-ContainerPaths' {
             # On Windows containers, the path is passed through unchanged
             $expectedWorkspace = ConvertTo-ContainerPath -HostPath $TestDrive -ContainerOS 'windows'
             $result.Workspace | Should -Be $expectedWorkspace
-            $result.ClaudeMount | Should -Be 'C:/mnt/host-claude'
         }
 
         It 'returns Linux-converted paths when ContainerOS is linux' {
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
             $expectedWorkspace = ConvertTo-ContainerPath -HostPath $TestDrive -ContainerOS 'linux'
             $result.Workspace | Should -Be $expectedWorkspace
-            $result.ClaudeMount | Should -Be '/mnt/host-claude'
         }
 
         It 'converts a Windows-style resolved path to Linux container path' {
-            # Simulate a Windows host path being passed as ResolvedPath
-            # ConvertTo-ContainerPath should translate C:\Users\... to /c/Users/...
             Mock Test-Path { $true }
             Mock Get-Item { [PSCustomObject]@{ Target = $null } } -ParameterFilter { $Path -like '*.claude.json' }
 
-            # Use a path that looks like a Windows path
             $windowsPath = 'C:\Users\jason\repos\myproject'
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $windowsPath -ClaudeConfigPath $script:claudeDir
             $result.Workspace | Should -Be '/c/Users/jason/repos/myproject'
@@ -45,12 +40,18 @@ Describe 'Resolve-ContainerPaths' {
     }
 
     Context 'Claude config directory mount' {
-        It 'adds a volume arg when claude config path exists' {
+        It 'mounts directly at ContainerAdministrator home on Windows' {
             Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
 
             $result = Resolve-ContainerPaths -ContainerOS 'windows' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
             $argsString = $result.DockerArgs -join ' '
-            $argsString | Should -BeLike "*$($script:claudeDir):C:/mnt/host-claude:rw*"
+            $argsString | Should -BeLike "*$($script:claudeDir):C:/Users/ContainerAdministrator/.claude:rw*"
+        }
+
+        It 'mounts directly at claude home on Linux' {
+            $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
+            $argsString = $result.DockerArgs -join ' '
+            $argsString | Should -BeLike "*$($script:claudeDir):/home/claude/.claude:rw*"
         }
 
         It 'emits a warning when claude config path does not exist' {
@@ -63,10 +64,10 @@ Describe 'Resolve-ContainerPaths' {
     }
 
     Context '.claude.json on Linux' {
-        It 'mounts .claude.json as read-only' {
+        It 'mounts .claude.json inside the direct mount as read-only' {
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
             $argsString = $result.DockerArgs -join ' '
-            $argsString | Should -BeLike '*:/mnt/host-claude.json:ro*'
+            $argsString | Should -BeLike '*:/home/claude/.claude/.claude.json:ro*'
         }
     }
 
@@ -87,6 +88,23 @@ Describe 'Resolve-ContainerPaths' {
         }
     }
 
+    Context 'cross-platform directory masking' {
+        It 'adds tmpfs overlays for plugins and session-env on Linux' {
+            $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
+            $argsString = $result.DockerArgs -join ' '
+            $argsString | Should -BeLike '*type=tmpfs,destination=/home/claude/.claude/plugins*'
+            $argsString | Should -BeLike '*type=tmpfs,destination=/home/claude/.claude/session-env*'
+        }
+
+        It 'does not add tmpfs overlays on Windows' {
+            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
+
+            $result = Resolve-ContainerPaths -ContainerOS 'windows' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
+            $argsString = $result.DockerArgs -join ' '
+            $argsString | Should -Not -BeLike '*tmpfs*'
+        }
+    }
+
     Context 'project directory bind-mount' {
         It 'derives container key from converted workspace path on Linux' {
             $hostKey = $TestDrive -replace '[/\\:]', '-'
@@ -95,7 +113,6 @@ Describe 'Resolve-ContainerPaths' {
 
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
 
-            # Container key is derived from the converted workspace path, not the raw resolved path
             $convertedWorkspace = ConvertTo-ContainerPath -HostPath $TestDrive -ContainerOS 'linux'
             $expectedContainerKey = $convertedWorkspace -replace '[/\\:]', '-'
             $argsString = $result.DockerArgs -join ' '
@@ -111,7 +128,6 @@ Describe 'Resolve-ContainerPaths' {
 
             $result = Resolve-ContainerPaths -ContainerOS 'windows' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
 
-            # On Windows containers, workspace is unchanged so key matches
             $convertedWorkspace = ConvertTo-ContainerPath -HostPath $TestDrive -ContainerOS 'windows'
             $expectedContainerKey = $convertedWorkspace -replace '[/\\:]', '-'
             $argsString = $result.DockerArgs -join ' '
@@ -119,7 +135,6 @@ Describe 'Resolve-ContainerPaths' {
         }
 
         It 'uses cross-platform converted path for container key when Windows path targets Linux container' {
-            # Simulate a Windows-style host path with the project dir existing
             Mock Test-Path { $true }
             Mock Get-Item { [PSCustomObject]@{ Target = $null } } -ParameterFilter { $Path -like '*.claude.json' }
 
@@ -130,14 +145,12 @@ Describe 'Resolve-ContainerPaths' {
 
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $windowsPath -ClaudeConfigPath $script:claudeDir
 
-            # Container workspace is /c/Users/jason/repos, container key is -c-Users-jason-repos
             $expectedContainerKey = '/c/Users/jason/repos' -replace '[/\\:]', '-'
             $argsString = $result.DockerArgs -join ' '
             $argsString | Should -BeLike "*:/home/claude/.claude/projects/$expectedContainerKey*"
         }
 
         It 'does not add project volume when host project dir does not exist' {
-            # Use a different resolved path that has no matching project dir under .claude/projects/
             $otherDir = Join-Path $TestDrive 'other-workspace'
             New-Item -Path $otherDir -ItemType Directory -Force | Out-Null
 
@@ -152,12 +165,11 @@ Describe 'Resolve-ContainerPaths' {
             $noJsonDir = Join-Path $TestDrive 'nojson'
             $claudeConfigDir = Join-Path $noJsonDir '.claude'
             New-Item -Path $claudeConfigDir -ItemType Directory -Force | Out-Null
-            # Deliberately do NOT create a .claude.json in $noJsonDir
 
             $result = Resolve-ContainerPaths -ContainerOS 'linux' -ResolvedPath $TestDrive -ClaudeConfigPath $claudeConfigDir
             $result.Errors | Should -HaveCount 0
             $argsString = $result.DockerArgs -join ' '
-            $argsString | Should -Not -BeLike '*host-claude.json*'
+            $argsString | Should -Not -BeLike '*.claude.json:ro*'
         }
     }
 }

@@ -206,7 +206,7 @@ Describe 'Invoke-DClaude' {
             # Workspace path should be the resolved host path (passthrough on Windows)
             $resolvedWorkDir = (Resolve-Path $script:workDir).Path
             $argsString | Should -BeLike "*$resolvedWorkDir*"
-            $argsString | Should -BeLike '*C:/mnt/host-claude*'
+            $argsString | Should -BeLike '*C:/Users/ContainerAdministrator/.claude:rw*'
         }
 
         It 'uses Linux paths when Docker OS is linux' {
@@ -219,7 +219,7 @@ Describe 'Invoke-DClaude' {
             $resolvedWorkDir = (Resolve-Path $script:workDir).Path
             $expectedWorkspace = ConvertTo-ContainerPath -HostPath $resolvedWorkDir -ContainerOS 'linux'
             $argsString | Should -BeLike "*$expectedWorkspace*"
-            $argsString | Should -BeLike '*/mnt/host-claude*'
+            $argsString | Should -BeLike '*/home/claude/.claude:rw*'
         }
 
         It 'normalizes capitalized OS type to lowercase' {
@@ -433,7 +433,7 @@ Describe 'Invoke-DClaude' {
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*/mnt/host-claude.json:ro*'
+            $argsString | Should -BeLike '*/home/claude/.claude/.claude.json:ro*'
         }
     }
 

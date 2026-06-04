@@ -65,11 +65,17 @@ Entrypoint scripts are mounted from the host module's `Entrypoints/` directory a
 - Workspace → mounted at the **host path** (translated for cross-platform: `C:\Users\jason\repos` → `/c/Users/jason/repos` on Linux containers), read-write
 - Runtime volume → mounted read-only (Node.js + Claude Code)
 - Entrypoint script → mounted read-only from host `Entrypoints/` directory
-- `~/.claude` → `/mnt/host-claude` (staging path, not directly at `~/.claude`)
-- Entrypoint creates **symlinks** from container's `~/.claude/` into the staging mount
-- `projects` and `rules` directories are handled specially (not bulk-symlinked)
+- `~/.claude` → mounted **directly** at the container's `~/.claude` (`/home/claude/.claude` on Linux, `C:/Users/ContainerAdministrator/.claude` on Windows), read-write
+- `.claude.json` → Linux: nested read-only bind mount inside the `.claude` directory mount; Windows: symlinked into `~/.claude/` by `Initialize-DClaudeWindowsContainers`
+- Linux cross-platform directories (`plugins/`, `session-env/`) → masked with tmpfs overlays to hide Windows-specific content
+
+The direct mount approach ensures that Claude Code's atomic writes (write-temp, rename) work correctly — files stay on the bind-mounted filesystem with no symlinks to break. This is critical for credential persistence (e.g., MCP OAuth tokens in `.credentials.json`).
 
 The host-path mounting strategy ensures that Docker volume commands from inside the container (sibling containers) use paths that are valid on the host Docker daemon. The `DCLAUDE_WORKSPACE` environment variable tells the entrypoint the container-side workspace path; it falls back to `/workspace` (Linux) or `C:\workspace` (Windows) for backward compatibility.
+
+#### Container Context Awareness
+
+A permanent rules file (`~/.claude/rules/dclaude-rules.md`) is installed on the host by the launcher on first run. It contains conditional instructions that reference `DCLAUDE_*` environment variables for dynamic context (host path, image name, volume mounts, env vars). This requires no runtime generation or cleanup on exit.
 
 #### Cross-Platform Path Translation
 
@@ -80,8 +86,6 @@ When running Linux containers on a Windows host, `ConvertTo-ContainerPath` trans
 Claude Code's `/resume` discovers sessions by scanning `~/.claude/projects/<key>/`. The project key inside a container is derived from the container-side workspace path (which now matches the translated host path).
 
 The launcher (`Invoke-DClaude`) **bind-mounts** the host project directory directly at the container's project path. This is required because Claude Code's multi-worktree resume uses `readdir` with `{withFileTypes: true}`, which returns `isDirectory()=false` for symlinks. Bind mounts appear as real directories.
-
-The entrypoint detects the existing bind mount and falls back to a symlink only if the mount isn't present.
 
 ### Project Key Derivation
 
@@ -98,11 +102,11 @@ The host-side key (for locating the project dir on the host) is derived from the
 Both entrypoints (`.ps1` and `.sh`) are mounted from the host `Entrypoints/` directory and follow the same pattern:
 1. Set up PATH to include the runtime volume's Node.js (and MinGit on Windows)
 2. Create `claude` user if not exists (Linux only — stock images won't have it)
-3. Symlink host `.claude` subdirs/files into container home (except `projects`, `rules`)
-4. Create `rules/` as a real directory, symlink host rules in, generate `dclaude-context.md`
-5. Detect project dir bind mount or create symlink fallback
-6. Sanitize `.claude.json` (strip host paths, pre-accept workspace on Windows)
-7. Run init scripts from `/mnt/init.d/` directories (user-common, user-image, project-common, project-image)
+3. Configure git safe.directory for the workspace
+4. Sanitize `.claude.json` (strip host paths, pre-accept workspace, preserve MCP config)
+5. Detect project dir bind mount and report session count
+6. Run init scripts from `/mnt/init.d/` directories (user-common, user-image, project-common, project-image)
+7. Link Docker CLI from provisioned volume (if `-DockerAccess` was used)
 8. `exec claude --dangerously-skip-permissions`
 
 **Known limitation (Windows):** The Windows entrypoint uses `& claude.cmd` rather than `exec` (which has no PowerShell equivalent). Claude runs as a child of PowerShell (PID 1), so `docker stop` signals may not propagate cleanly. This is a platform limitation, not a bug.
@@ -118,7 +122,7 @@ Both entrypoints sanitize `.claude.json` before launching Claude Code. The canon
 | `officialMarketplaceAutoInstallAttempted` | Set to `true` (skip marketplace prompt) |
 | `officialMarketplaceAutoInstalled` | Set to `true` (skip marketplace prompt) |
 
-The Linux entrypoint reads from the bind-mounted `/mnt/host-claude.json` and writes to `/home/claude/.claude.json`. The Windows entrypoint reads from `~/.claude/.claude.json` (symlinked into the `.claude` directory mount) and writes to `~/.claude.json`.
+The Linux entrypoint reads from `~/.claude/.claude.json` (inside the direct mount) and writes the sanitized version to `~/.claude.json`. The Windows entrypoint reads from `~/.claude/.claude.json` and writes to `~/.claude.json` (only if the destination doesn't already exist).
 
 ## Platform Parity
 

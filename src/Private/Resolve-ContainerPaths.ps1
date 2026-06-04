@@ -19,30 +19,27 @@ function Resolve-ContainerPaths {
     # On same-platform, this is a no-op. On Windows->Linux, converts C:\... to /c/...
     $workspace = ConvertTo-ContainerPath -HostPath $ResolvedPath -ContainerOS $ContainerOS
 
-    # Set Claude config mount path based on OS type
+    # Mount ~/.claude directly at the container's ~/.claude so all reads/writes
+    # go straight to the host filesystem. No staging path or symlinks needed.
     if ($ContainerOS -eq 'windows') {
-        # Mount at a staging path, not directly at ~/.claude, so the entrypoint
-        # can create symlinks on the local filesystem pointing into the mount.
-        # (Windows containers cannot create reparse points inside bind mounts.)
-        $claudeMount = 'C:/mnt/host-claude'
+        $claudeHome = 'C:/Users/ContainerAdministrator/.claude'
     }
     else {
-        $claudeMount = '/mnt/host-claude'
+        $claudeHome = '/home/claude/.claude'
     }
 
-    # Mount Claude config directory
     if (Test-Path $ClaudeConfigPath) {
         $dockerArgs += '-v'
-        $dockerArgs += "${ClaudeConfigPath}:${claudeMount}:rw"
+        $dockerArgs += "${ClaudeConfigPath}:${claudeHome}:rw"
     }
     else {
         Write-Warning "Claude config path '$ClaudeConfigPath' not found. Container will start without Claude configuration."
     }
 
-    # Mount .claude.json (lives in home dir, separate from .claude/ directory)
-    # Windows containers cannot bind-mount single files. On Windows, run
-    # Initialize-DClaudeWindowsContainers to symlink .claude.json into
-    # ~/.claude/ so it's carried by the directory mount above.
+    # Mount .claude.json (lives in home dir, separate from .claude/ directory).
+    # Windows: Initialize-DClaudeWindowsContainers symlinks it into ~/.claude/
+    # so it travels with the directory mount above.
+    # Linux: mount it inside the directory mount as a nested read-only bind.
     $claudeJsonPath = Join-Path (Split-Path $ClaudeConfigPath) '.claude.json'
     if (Test-Path $claudeJsonPath) {
         if ($ContainerOS -eq 'windows') {
@@ -52,8 +49,16 @@ function Resolve-ContainerPaths {
         }
         else {
             $dockerArgs += '-v'
-            $dockerArgs += "${claudeJsonPath}:/mnt/host-claude.json:ro"
+            $dockerArgs += "${claudeJsonPath}:${claudeHome}/.claude.json:ro"
         }
+    }
+
+    # Mask cross-platform directories in Linux containers (host has Windows-specific content).
+    if ($ContainerOS -ne 'windows') {
+        $dockerArgs += '--mount'
+        $dockerArgs += "type=tmpfs,destination=${claudeHome}/plugins"
+        $dockerArgs += '--mount'
+        $dockerArgs += "type=tmpfs,destination=${claudeHome}/session-env"
     }
 
     # Mount the host project directory directly at the container's project path.
@@ -77,7 +82,6 @@ function Resolve-ContainerPaths {
 
     return [PSCustomObject]@{
         Workspace  = $workspace
-        ClaudeMount = $claudeMount
         DockerArgs = $dockerArgs
         Errors     = $errors
     }

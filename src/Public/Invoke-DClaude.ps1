@@ -160,6 +160,32 @@ function Invoke-DClaude {
         return
     }
 
+    # Ensure the permanent dclaude rules file exists on the host.
+    # This provides container context to Claude via env vars rather than
+    # generating a file at runtime that needs cleanup.
+    $dclaudeRulesFile = Join-Path $ClaudeConfigPath 'rules' 'dclaude-rules.md'
+    if (-not (Test-Path $dclaudeRulesFile)) {
+        New-Item -ItemType Directory -Path (Split-Path $dclaudeRulesFile) -Force | Out-Null
+        @'
+# dclaude Container Context
+
+When the environment variable DCLAUDE_HOST_PATH is set, you are running
+inside a dclaude Docker container. The following applies:
+
+- The workspace is mounted from the host path in DCLAUDE_HOST_PATH.
+- The container image is in DCLAUDE_IMAGE.
+- Additional volume mounts are in DCLAUDE_VOLUMES (pipe-separated specs: host:container:mode).
+- Passthrough environment variable names are in DCLAUDE_ENV (pipe-separated).
+- Paths referenced in CLAUDE.md or other instructions may refer to host-only locations
+  not mounted in this container.
+
+When a referenced path does not exist:
+1. Do NOT search for it or attempt workarounds.
+2. Inform the user it was not mounted into the container.
+3. Suggest they add a volume mount in their dclaude project or image configuration.
+'@ | Set-Content $dclaudeRulesFile -Encoding UTF8
+    }
+
     # Resolve container paths and platform-specific mounts
     $paths = Resolve-ContainerPaths -ContainerOS $containerOS -ResolvedPath $resolvedPath -ClaudeConfigPath $ClaudeConfigPath
     if ($paths.Errors.Count -gt 0) {
