@@ -1,34 +1,61 @@
 <#
 .SYNOPSIS
-    Adds volume mount specifications to dclaude settings.
+    Adds a volume mount to dclaude settings.
 
 .DESCRIPTION
-    Appends one or more volume mount specifications to the 'volumes' array
-    in the specified dclaude settings file. Volume specs use the format
-    'host:container[:mode]'. Duplicate specs are skipped.
+    Appends a volume mount specification to the 'volumes' object in the
+    specified dclaude settings file under the given platform key. By default
+    the container path matches the local path and the mount is read-only.
+    Use -ContainerPath to mount at a different location, and -ReadWrite for
+    a writable mount.
 
-.PARAMETER Volume
-    One or more volume mount specifications (e.g. 'C:/data:/data:rw').
+.PARAMETER LocalPath
+    Host path to mount. Environment variables (%VAR%) are expanded at
+    container launch time.
+
+.PARAMETER ContainerPath
+    Container-side mount path. Defaults to the same as LocalPath.
+
+.PARAMETER ReadWrite
+    Mount the volume read-write instead of the default read-only.
+
+.PARAMETER Platform
+    Target platform: Windows or Linux.
 
 .PARAMETER Scope
     Target settings file: User, Project, or ProjectLocal.
     Defaults to ProjectLocal.
 
 .EXAMPLE
-    Add-DClaudeVolume -Volume 'C:\Users\me\.nuget:/home/claude/.nuget:ro'
+    Add-DClaudeVolume C:\Users\me\source\repos\jboyd-fcm -Platform Linux
 
-    Adds a read-only NuGet cache mount to the project's settings.local.json.
+    Mounts the directory read-only at the same path inside Linux containers.
 
 .EXAMPLE
-    Add-DClaudeVolume -Volume '%USERPROFILE%\.ssh:/home/claude/.ssh:ro' -Scope User
+    Add-DClaudeVolume C:\Users\me\.nuget -ContainerPath /home/claude/.nuget -Platform Linux
 
-    Adds an SSH key mount to the user config (applies to all images).
+    Mounts .nuget read-only at a different container path in Linux containers.
+
+.EXAMPLE
+    Add-DClaudeVolume C:\wrk\data -ReadWrite -Platform Windows -Scope User
+
+    Adds a writable mount to the user config for Windows containers.
 #>
 function Add-DClaudeVolume {
     [CmdletBinding(SupportsShouldProcess)]
     param(
+        [Parameter(Mandatory, Position = 0)]
+        [string]$LocalPath,
+
+        [Parameter(Position = 1)]
+        [string]$ContainerPath,
+
+        [Parameter()]
+        [switch]$ReadWrite,
+
         [Parameter(Mandatory)]
-        [string[]]$Volume,
+        [ValidateSet('Windows', 'Linux')]
+        [string]$Platform,
 
         [Parameter()]
         [ValidateSet('User', 'Project', 'ProjectLocal')]
@@ -38,24 +65,38 @@ function Add-DClaudeVolume {
     $resolved = Resolve-SettingsScope -Scope $Scope
     if (-not $resolved) { return }
 
+    if (-not $ContainerPath) {
+        $ContainerPath = $LocalPath
+    }
+    $mode = if ($ReadWrite) { 'rw' } else { 'ro' }
+    $volumeSpec = "${LocalPath}:${ContainerPath}:${mode}"
+
+    $platKey = $Platform.ToLower()
+
     $config = Read-SettingsFile -Directory $resolved.Directory -FileName $resolved.FileName
     if (-not $config) {
         $config = [PSCustomObject]@{}
     }
 
-    $existing = if ($config.PSObject.Properties['volumes'] -and $config.volumes -is [array]) {
-        , [array]$config.volumes
+    $volumesObj = if ($config.PSObject.Properties['volumes'] -and $config.volumes -is [PSCustomObject]) {
+        $config.volumes
+    } else {
+        [PSCustomObject]@{}
+    }
+
+    $existing = if ($volumesObj.PSObject.Properties[$platKey] -and $volumesObj.$platKey -is [array]) {
+        , [array]$volumesObj.$platKey
     } else { , @() }
 
-    $toAdd = @($Volume | Where-Object { $_ -notin $existing })
-    if ($toAdd.Count -eq 0) {
-        Write-Verbose 'All volumes already present; nothing to add.'
+    if ($volumeSpec -in $existing) {
+        Write-Verbose "Volume '$volumeSpec' already present under '$platKey'; nothing to add."
         return
     }
 
-    if ($PSCmdlet.ShouldProcess("$Scope config", "Add volumes: $($toAdd -join ', ')")) {
-        $newList = $existing + $toAdd
-        $config | Add-Member -MemberType NoteProperty -Name 'volumes' -Value @($newList) -Force
+    if ($PSCmdlet.ShouldProcess("$Scope config ($platKey)", "Add volume: $volumeSpec")) {
+        $newList = $existing + @($volumeSpec)
+        $volumesObj | Add-Member -MemberType NoteProperty -Name $platKey -Value @($newList) -Force
+        $config | Add-Member -MemberType NoteProperty -Name 'volumes' -Value $volumesObj -Force
         Save-SettingsFile -Directory $resolved.Directory -Config $config -FileName $resolved.FileName
     }
 }

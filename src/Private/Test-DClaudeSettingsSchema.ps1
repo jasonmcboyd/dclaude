@@ -76,13 +76,10 @@ function Test-DClaudeSettingsSchema {
         $errors += "$Label`: 'imageKey' must be a string"
     }
 
-    # Validate top-level volumes (array or {windows:[...], linux:[...]} object)
+    # Validate top-level volumes ({windows:[...], linux:[...]} object)
     if ($Config.PSObject.Properties['volumes']) {
         $v = $Config.volumes
-        if ($v -is [array]) {
-            # flat array form — valid
-        }
-        elseif ($v -is [PSCustomObject]) {
+        if ($v -is [PSCustomObject]) {
             foreach ($platProp in $v.PSObject.Properties) {
                 if ($platProp.Name -notin @('windows', 'linux')) {
                     $errors += "$Label`: volumes key '$($platProp.Name)' is not valid; expected 'windows' or 'linux'"
@@ -93,7 +90,7 @@ function Test-DClaudeSettingsSchema {
             }
         }
         else {
-            $errors += "$Label`: 'volumes' must be an array or an object with 'windows'/'linux' keys"
+            $errors += "$Label`: 'volumes' must be an object with 'windows'/'linux' keys"
         }
     }
 

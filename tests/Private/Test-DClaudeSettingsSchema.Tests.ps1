@@ -20,7 +20,9 @@ Describe 'Test-DClaudeSettingsSchema' {
         It 'returns no errors for a valid project config' {
             $config = [PSCustomObject]@{
                 defaultImageKey = 'pwsh'
-                volumes         = @('C:/foo:C:/bar:ro')
+                volumes         = [PSCustomObject]@{
+                    linux = @('/foo:/bar:ro')
+                }
             }
             $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
             $errors | Should -HaveCount 0
@@ -172,17 +174,18 @@ Describe 'Test-DClaudeSettingsSchema' {
             $errors[0] | Should -BeLike "*defaultImageKey*string*"
         }
 
-        It 'reports error when top-level volumes is neither array nor object' {
+        It 'reports error when top-level volumes is not an object' {
             $config = [PSCustomObject]@{ volumes = 'not-valid' }
             $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
             $errors | Should -HaveCount 1
             $errors[0] | Should -BeLike "*volumes*"
         }
 
-        It 'accepts volumes as a flat array' {
+        It 'reports error when volumes is a flat array' {
             $config = [PSCustomObject]@{ volumes = @('/host:/container:ro') }
             $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
-            $errors | Should -HaveCount 0
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*volumes*"
         }
 
         It 'accepts volumes as a windows/linux object' {

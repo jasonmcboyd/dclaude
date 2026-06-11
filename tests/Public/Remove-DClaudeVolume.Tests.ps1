@@ -15,30 +15,56 @@ Describe 'Remove-DClaudeVolume' {
     Context 'when removing an existing volume' {
         It 'removes the volume and saves' {
             Mock Read-SettingsFile {
-                return [PSCustomObject]@{ volumes = @('/a:/a:ro', '/b:/b:rw') }
+                return [PSCustomObject]@{
+                    volumes = [PSCustomObject]@{ linux = @('/a:/a:ro', '/b:/b:rw') }
+                }
             }
             Mock Resolve-SettingsScope {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a:ro' -Scope Project
+            Remove-DClaudeVolume -Volume '/a:/a:ro' -Platform Linux -Scope Project
 
             Should -Invoke Save-SettingsFile -Times 1
-            $script:savedConfig.volumes | Should -HaveCount 1
-            $script:savedConfig.volumes[0] | Should -Be '/b:/b:rw'
+            $script:savedConfig.volumes.linux | Should -HaveCount 1
+            $script:savedConfig.volumes.linux[0] | Should -Be '/b:/b:rw'
         }
     }
 
-    Context 'when removing the last volume' {
-        It 'removes the volumes property entirely' {
+    Context 'when removing the last volume for a platform' {
+        It 'removes the platform key' {
             Mock Read-SettingsFile {
-                return [PSCustomObject]@{ volumes = @('/a:/a:ro'); defaultImageKey = 'pwsh' }
+                return [PSCustomObject]@{
+                    volumes = [PSCustomObject]@{
+                        linux   = @('/a:/a:ro')
+                        windows = @('C:/x:C:/x:ro')
+                    }
+                }
             }
             Mock Resolve-SettingsScope {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a:ro' -Scope Project
+            Remove-DClaudeVolume -Volume '/a:/a:ro' -Platform Linux -Scope Project
+
+            $script:savedConfig.volumes.PSObject.Properties['linux'] | Should -BeNullOrEmpty
+            $script:savedConfig.volumes.windows | Should -HaveCount 1
+        }
+    }
+
+    Context 'when removing the last volume across all platforms' {
+        It 'removes the volumes property entirely' {
+            Mock Read-SettingsFile {
+                return [PSCustomObject]@{
+                    volumes        = [PSCustomObject]@{ linux = @('/a:/a:ro') }
+                    defaultImageKey = 'pwsh'
+                }
+            }
+            Mock Resolve-SettingsScope {
+                return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
+            }
+
+            Remove-DClaudeVolume -Volume '/a:/a:ro' -Platform Linux -Scope Project
 
             $script:savedConfig.PSObject.Properties['volumes'] | Should -BeNullOrEmpty
             $script:savedConfig.defaultImageKey | Should -Be 'pwsh'
@@ -48,13 +74,15 @@ Describe 'Remove-DClaudeVolume' {
     Context 'when volume is not found' {
         It 'writes an error and does not save' {
             Mock Read-SettingsFile {
-                return [PSCustomObject]@{ volumes = @('/a:/a:ro') }
+                return [PSCustomObject]@{
+                    volumes = [PSCustomObject]@{ linux = @('/a:/a:ro') }
+                }
             }
             Mock Resolve-SettingsScope {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/nonexistent:/path' -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
+            Remove-DClaudeVolume -Volume '/nonexistent:/path' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
 
             $err | Should -Not -BeNullOrEmpty
             $err[0].ToString() | Should -BeLike "*not found*"
@@ -62,7 +90,25 @@ Describe 'Remove-DClaudeVolume' {
         }
     }
 
-    Context 'when no volumes exist' {
+    Context 'when no volumes exist for the platform' {
+        It 'writes an error' {
+            Mock Read-SettingsFile {
+                return [PSCustomObject]@{
+                    volumes = [PSCustomObject]@{ windows = @('C:/a:C:/a:ro') }
+                }
+            }
+            Mock Resolve-SettingsScope {
+                return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
+            }
+
+            Remove-DClaudeVolume -Volume '/a:/a' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
+
+            $err | Should -Not -BeNullOrEmpty
+            Should -Not -Invoke Save-SettingsFile
+        }
+    }
+
+    Context 'when no volumes exist at all' {
         It 'writes an error' {
             Mock Read-SettingsFile {
                 return [PSCustomObject]@{ defaultImageKey = 'pwsh' }
@@ -71,7 +117,7 @@ Describe 'Remove-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a' -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
+            Remove-DClaudeVolume -Volume '/a:/a' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
 
             $err | Should -Not -BeNullOrEmpty
             Should -Not -Invoke Save-SettingsFile
@@ -81,13 +127,15 @@ Describe 'Remove-DClaudeVolume' {
     Context 'WhatIf support' {
         It 'does not save when -WhatIf is used' {
             Mock Read-SettingsFile {
-                return [PSCustomObject]@{ volumes = @('/a:/a:ro') }
+                return [PSCustomObject]@{
+                    volumes = [PSCustomObject]@{ linux = @('/a:/a:ro') }
+                }
             }
             Mock Resolve-SettingsScope {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a:ro' -Scope Project -WhatIf
+            Remove-DClaudeVolume -Volume '/a:/a:ro' -Platform Linux -Scope Project -WhatIf
 
             Should -Not -Invoke Save-SettingsFile
         }

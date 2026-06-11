@@ -9,16 +9,35 @@ BeforeAll {
 
 Describe 'Get-DClaudeVolume' {
 
-    Context 'when volumes is set' {
-        It 'returns the volumes' {
+    Context 'when volumes is set for the platform' {
+        It 'returns the platform volumes' {
             Mock Resolve-SettingsScope {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
-            @{ volumes = @('/data:/data:rw', '/logs:/logs:ro') } | ConvertTo-Json | Set-Content "$TestDrive/settings.json"
+            @{
+                volumes = @{
+                    linux   = @('/data:/data:rw', '/logs:/logs:ro')
+                    windows = @('C:/data:C:/data:ro')
+                }
+            } | ConvertTo-Json -Depth 3 | Set-Content "$TestDrive/settings.json"
 
-            $result = Get-DClaudeVolume -Scope User
+            $result = Get-DClaudeVolume -Platform Linux -Scope User
             $result | Should -HaveCount 2
             $result | Should -Contain '/data:/data:rw'
+        }
+    }
+
+    Context 'when volumes has no entries for the requested platform' {
+        It 'returns empty array' {
+            Mock Resolve-SettingsScope {
+                return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
+            }
+            @{
+                volumes = @{ windows = @('C:/data:C:/data:ro') }
+            } | ConvertTo-Json -Depth 3 | Set-Content "$TestDrive/settings.json"
+
+            $result = Get-DClaudeVolume -Platform Linux -Scope User
+            $result | Should -HaveCount 0
         }
     }
 
@@ -29,7 +48,7 @@ Describe 'Get-DClaudeVolume' {
             }
             @{ defaultImageKey = 'pwsh' } | ConvertTo-Json | Set-Content "$TestDrive/settings.json"
 
-            $result = Get-DClaudeVolume -Scope User
+            $result = Get-DClaudeVolume -Platform Linux -Scope User
             $result | Should -HaveCount 0
         }
     }
@@ -42,19 +61,21 @@ Describe 'Get-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $emptyDir; FileName = 'settings.json' }
             }
 
-            $result = Get-DClaudeVolume -Scope User
+            $result = Get-DClaudeVolume -Platform Linux -Scope User
             $result | Should -HaveCount 0
         }
     }
 
     Context 'when User scope has deprecated commonVolumes' {
-        It 'falls back to commonVolumes' {
+        It 'falls back to commonVolumes platform key' {
             Mock Resolve-SettingsScope {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
-            @{ commonVolumes = @('/old:/old:ro') } | ConvertTo-Json | Set-Content "$TestDrive/settings.json"
+            @{
+                commonVolumes = @{ linux = @('/old:/old:ro') }
+            } | ConvertTo-Json -Depth 3 | Set-Content "$TestDrive/settings.json"
 
-            $result = Get-DClaudeVolume -Scope User
+            $result = Get-DClaudeVolume -Platform Linux -Scope User
             $result | Should -HaveCount 1
             $result[0] | Should -Be '/old:/old:ro'
         }
@@ -64,16 +85,20 @@ Describe 'Get-DClaudeVolume' {
         It 'returns the local override value' {
             $dir = Join-Path $TestDrive 'merged'
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
-            @{ volumes = @('/base:/base') } | ConvertTo-Json | Set-Content "$dir/settings.json"
-            @{ volumes = @('/local:/local') } | ConvertTo-Json | Set-Content "$dir/settings.local.json"
+            @{
+                volumes = @{ linux = @('/base:/base:ro') }
+            } | ConvertTo-Json -Depth 3 | Set-Content "$dir/settings.json"
+            @{
+                volumes = @{ linux = @('/local:/local:ro') }
+            } | ConvertTo-Json -Depth 3 | Set-Content "$dir/settings.local.json"
 
             Mock Resolve-SettingsScope {
                 return [PSCustomObject]@{ Directory = $dir; FileName = 'settings.json' }
             }
 
-            $result = Get-DClaudeVolume -Scope Project
+            $result = Get-DClaudeVolume -Platform Linux -Scope Project
             $result | Should -HaveCount 1
-            $result[0] | Should -Be '/local:/local'
+            $result[0] | Should -Be '/local:/local:ro'
         }
     }
 }

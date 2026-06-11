@@ -63,7 +63,7 @@ Settings are managed via cmdlets with a `-Scope` parameter (`User`, `Project`, `
 | --- | --- | --- |
 | `defaultImageKey` | string | Default image key when none specified |
 | `envPassthrough` | string[] | Env var name/glob patterns forwarded to all containers |
-| `volumes` | array or {windows:[], linux:[]} | Volume mounts applied to all images |
+| `volumes` | {windows:[], linux:[]} | Volume mounts applied to all images, keyed by platform |
 | `images` | object | Named image definitions with platform-specific entries |
 
 **Project config** (`.dclaude/settings.json` or `.dclaude/settings.local.json`):
@@ -72,7 +72,7 @@ Settings are managed via cmdlets with a `-Scope` parameter (`User`, `Project`, `
 | --- | --- | --- |
 | `defaultImageKey` | string | Default image key for this project |
 | `envPassthrough` | string[] | Env var patterns (merged additively with user-level) |
-| `volumes` | string[] | Volume mounts for this project |
+| `volumes` | {windows:[], linux:[]} | Volume mounts for this project, keyed by platform |
 
 Image resolution priority: `-Image` param > `-ImageKey` param > project `defaultImageKey` > user `defaultImageKey`.
 

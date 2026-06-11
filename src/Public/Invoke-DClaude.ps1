@@ -291,7 +291,16 @@ When a referenced path does not exist:
             $userVolumes = @($userVolumeProp.$containerOS)
         }
     }
-    $projectVolumes = if ($config -and $config.volumes) { @($config.volumes) } else { @() }
+    $projectVolumeProp = if ($config -and $config.PSObject.Properties['volumes']) { $config.volumes } else { $null }
+    $projectVolumes = @()
+    if ($projectVolumeProp) {
+        if ($projectVolumeProp -is [PSCustomObject] -and $projectVolumeProp.PSObject.Properties[$containerOS]) {
+            $projectVolumes = @($projectVolumeProp.$containerOS)
+        } elseif ($projectVolumeProp -is [array]) {
+            Write-Warning "Project config uses flat array for 'volumes'. Use platform-keyed object format: { `"windows`": [...], `"linux`": [...] }"
+            $projectVolumes = @($projectVolumeProp)
+        }
+    }
     $volumeArgs = Get-VolumeArgs -UserVolumes $userVolumes -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes -ContainerOS $containerOS
     $dockerArgs += $volumeArgs
 
