@@ -8,8 +8,8 @@ PowerShell module that runs Claude Code inside Docker containers, providing a se
 src/
   dclaude.psm1          # Module loader (dot-sources Private/ and Public/, registers alias)
   dclaude.psd1          # Module manifest
-  Public/               # 7 exported functions
-  Private/              # 11 internal helper functions
+  Public/               # 13 exported functions
+  Private/              # 12 internal helper functions
 Entrypoints/
   entrypoint.ps1        # Windows container init (mounted at runtime, not baked into images)
   entrypoint.sh         # Linux container init (mounted at runtime, not baked into images)
@@ -40,11 +40,43 @@ first use and reused across containers.
 
 ### Config Hierarchy
 
-1. **User config** (`~/.dclaude/settings.json`) — global image registry
+1. **User config** (`~/.dclaude/settings.json`) — global image registry, default image key, shared volumes, env passthrough
 2. **Project config** (`.dclaude/settings.json`) — committed, team-shared
-3. **Local overrides** (`settings.local.json` alongside either) — machine-specific, git-ignored
+3. **Project local overrides** (`.dclaude/settings.local.json`) — machine-specific, git-ignored
 
 Merge is **shallow**: local replaces entire top-level properties from base.
+
+Settings are managed via cmdlets with a `-Scope` parameter (`User`, `Project`, `ProjectLocal`; default `ProjectLocal`):
+
+| Cmdlet | Purpose |
+| --- | --- |
+| `Set-DClaudeDefaultImageKey` / `Get-DClaudeDefaultImageKey` | Set/get the default image key |
+| `Add-DClaudeEnvPassthrough` / `Remove-DClaudeEnvPassthrough` / `Get-DClaudeEnvPassthrough` | Manage env passthrough patterns |
+| `Add-DClaudeVolume` / `Remove-DClaudeVolume` / `Get-DClaudeVolume` | Manage volume mounts |
+| `Add-DClaudeImage` / `Get-DClaudeImage` / `Remove-DClaudeImage` | Manage image definitions (user-level only) |
+
+#### Config Properties
+
+**User config** (`~/.dclaude/settings.json`):
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `defaultImageKey` | string | Default image key when none specified |
+| `envPassthrough` | string[] | Env var name/glob patterns forwarded to all containers |
+| `volumes` | array or {windows:[], linux:[]} | Volume mounts applied to all images |
+| `images` | object | Named image definitions with platform-specific entries |
+
+**Project config** (`.dclaude/settings.json` or `.dclaude/settings.local.json`):
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `defaultImageKey` | string | Default image key for this project |
+| `envPassthrough` | string[] | Env var patterns (merged additively with user-level) |
+| `volumes` | string[] | Volume mounts for this project |
+
+Image resolution priority: `-Image` param > `-ImageKey` param > project `defaultImageKey` > user `defaultImageKey`.
+
+Env passthrough patterns are merged additively: user + image-level + project patterns are all combined.
 
 ### Runtime Volume
 

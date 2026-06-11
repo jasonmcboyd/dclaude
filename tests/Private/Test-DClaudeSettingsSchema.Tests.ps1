@@ -19,8 +19,8 @@ Describe 'Test-DClaudeSettingsSchema' {
 
         It 'returns no errors for a valid project config' {
             $config = [PSCustomObject]@{
-                imageKey = 'pwsh'
-                volumes  = @('C:/foo:C:/bar:ro')
+                defaultImageKey = 'pwsh'
+                volumes         = @('C:/foo:C:/bar:ro')
             }
             $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
             $errors | Should -HaveCount 0
@@ -172,11 +172,50 @@ Describe 'Test-DClaudeSettingsSchema' {
             $errors[0] | Should -BeLike "*defaultImageKey*string*"
         }
 
-        It 'reports error when top-level volumes is not an array' {
-            $config = [PSCustomObject]@{ volumes = 'not-array' }
+        It 'reports error when top-level volumes is neither array nor object' {
+            $config = [PSCustomObject]@{ volumes = 'not-valid' }
             $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
             $errors | Should -HaveCount 1
-            $errors[0] | Should -BeLike "*volumes*array*"
+            $errors[0] | Should -BeLike "*volumes*"
+        }
+
+        It 'accepts volumes as a flat array' {
+            $config = [PSCustomObject]@{ volumes = @('/host:/container:ro') }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 0
+        }
+
+        It 'accepts volumes as a windows/linux object' {
+            $config = [PSCustomObject]@{
+                volumes = [PSCustomObject]@{
+                    windows = @('C:/host:C:/container:ro')
+                    linux   = @('/host:/container:ro')
+                }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 0
+        }
+
+        It 'reports error when volumes object has an unknown key' {
+            $config = [PSCustomObject]@{
+                volumes = [PSCustomObject]@{ macos = @('/host:/container') }
+            }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*macos*"
+        }
+
+        It 'accepts envPassthrough as an array' {
+            $config = [PSCustomObject]@{ envPassthrough = @('NUGET_*', 'AZURE_*') }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 0
+        }
+
+        It 'reports error when envPassthrough is not an array' {
+            $config = [PSCustomObject]@{ envPassthrough = 'not-array' }
+            $errors = Test-DClaudeSettingsSchema -Config $config -Label 'test'
+            $errors | Should -HaveCount 1
+            $errors[0] | Should -BeLike "*envPassthrough*array*"
         }
 
         It 'accepts commonVolumes as a flat array' {

@@ -129,11 +129,16 @@ function Invoke-DClaude {
             $imageKeyToResolve = $ImageKey
         }
         'Default' {
-            if ($config -and $config.image) {
-                $imageTag = $config.image
+            if ($config -and $config.PSObject.Properties['defaultImageKey']) {
+                $imageKeyToResolve = $config.defaultImageKey
             }
-            elseif ($config -and $config.imageKey) {
+            elseif ($config -and $config.PSObject.Properties['imageKey']) {
+                Write-Warning "Project config uses deprecated 'imageKey'. Rename to 'defaultImageKey'."
                 $imageKeyToResolve = $config.imageKey
+            }
+            elseif ($config -and $config.PSObject.Properties['image']) {
+                Write-Warning "Project config uses deprecated 'image'. Use 'defaultImageKey' instead, or pass -Image to Invoke-DClaude."
+                $imageTag = $config.image
             }
         }
     }
@@ -156,7 +161,7 @@ function Invoke-DClaude {
     }
 
     if (-not $imageTag) {
-        Write-Error "No image specified. Pass -Image, -ImageKey, set 'image'/'imageKey' in project .dclaude/settings.json, or set 'defaultImageKey' in ~/.dclaude/settings.json."
+        Write-Error "No image specified. Pass -Image, -ImageKey, set 'defaultImageKey' in project .dclaude/settings.json, or set 'defaultImageKey' in ~/.dclaude/settings.json."
         return
     }
 
@@ -273,23 +278,31 @@ When a referenced path does not exist:
     # Append volume mounts from user config, image config, and project config
     $userConfig = Get-DClaudeUserConfig
     $userVolumes = @()
-    if ($userConfig -and $userConfig.PSObject.Properties['commonVolumes']) {
-        $cv = $userConfig.commonVolumes
-        if ($cv -is [array]) {
-            $userVolumes = @($cv)
-        } elseif ($cv -is [PSCustomObject] -and $cv.PSObject.Properties[$containerOS]) {
-            $userVolumes = @($cv.$containerOS)
+    $userVolumeProp = if ($userConfig -and $userConfig.PSObject.Properties['volumes']) {
+        $userConfig.volumes
+    } elseif ($userConfig -and $userConfig.PSObject.Properties['commonVolumes']) {
+        Write-Warning "User config uses deprecated 'commonVolumes'. Rename to 'volumes'."
+        $userConfig.commonVolumes
+    } else { $null }
+    if ($userVolumeProp) {
+        if ($userVolumeProp -is [array]) {
+            $userVolumes = @($userVolumeProp)
+        } elseif ($userVolumeProp -is [PSCustomObject] -and $userVolumeProp.PSObject.Properties[$containerOS]) {
+            $userVolumes = @($userVolumeProp.$containerOS)
         }
     }
     $projectVolumes = if ($config -and $config.volumes) { @($config.volumes) } else { @() }
     $volumeArgs = Get-VolumeArgs -UserVolumes $userVolumes -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes -ContainerOS $containerOS
     $dockerArgs += $volumeArgs
 
-    # Append environment variable passthrough (global + image-level patterns)
+    # Append environment variable passthrough (global + image-level + project-level patterns)
     $globalEnvPassthrough = if ($userConfig -and $userConfig.PSObject.Properties['envPassthrough']) {
         @($userConfig.envPassthrough)
     } else { @() }
-    $envPatterns = $globalEnvPassthrough + $imageEnvPassthrough
+    $projectEnvPassthrough = if ($config -and $config.PSObject.Properties['envPassthrough']) {
+        @($config.envPassthrough)
+    } else { @() }
+    $envPatterns = $globalEnvPassthrough + $imageEnvPassthrough + $projectEnvPassthrough
     $envPassthroughResult = Get-EnvironmentPassthroughArgs -HostPath $resolvedPath -Patterns $envPatterns
     $dockerArgs += $envPassthroughResult
 

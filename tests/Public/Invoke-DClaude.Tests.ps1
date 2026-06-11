@@ -117,20 +117,9 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'image resolution from project config' {
-        It 'uses image from project config when no param specified' {
+        It 'resolves defaultImageKey from project config' {
             Mock Get-DClaudeConfig {
-                return [PSCustomObject]@{ image = 'project-image:v2' }
-            }
-
-            Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir
-
-            Should -Invoke docker
-            $script:capturedDockerArgs | Should -Contain 'project-image:v2'
-        }
-
-        It 'resolves imageKey from project config' {
-            Mock Get-DClaudeConfig {
-                return [PSCustomObject]@{ imageKey = 'pwsh' }
+                return [PSCustomObject]@{ defaultImageKey = 'pwsh' }
             }
             Mock Resolve-ImageKey {
                 return [PSCustomObject]@{ tag = 'dclaude-pwsh:latest'; volumes = @() }
@@ -141,25 +130,49 @@ Describe 'Invoke-DClaude' {
             Should -Invoke docker
             $script:capturedDockerArgs | Should -Contain 'dclaude-pwsh:latest'
         }
-    }
 
-    Context 'image takes precedence over imageKey in project config' {
-        It 'uses image and does not call Resolve-ImageKey' {
+        It 'falls back to deprecated imageKey from project config' {
             Mock Get-DClaudeConfig {
-                return [PSCustomObject]@{
-                    image    = 'direct-image:v1'
-                    imageKey = 'pwsh'
-                }
+                return [PSCustomObject]@{ imageKey = 'pwsh' }
             }
             Mock Resolve-ImageKey {
                 return [PSCustomObject]@{ tag = 'dclaude-pwsh:latest'; volumes = @() }
             }
 
+            Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir 3>$null
+
+            Should -Invoke docker
+            $script:capturedDockerArgs | Should -Contain 'dclaude-pwsh:latest'
+        }
+
+        It 'falls back to deprecated image from project config' {
+            Mock Get-DClaudeConfig {
+                return [PSCustomObject]@{ image = 'project-image:v2' }
+            }
+
+            Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir 3>$null
+
+            Should -Invoke docker
+            $script:capturedDockerArgs | Should -Contain 'project-image:v2'
+        }
+    }
+
+    Context 'defaultImageKey takes precedence over deprecated properties in project config' {
+        It 'uses defaultImageKey and ignores deprecated imageKey' {
+            Mock Get-DClaudeConfig {
+                return [PSCustomObject]@{
+                    defaultImageKey = 'primary'
+                    imageKey        = 'fallback'
+                }
+            }
+            Mock Resolve-ImageKey {
+                return [PSCustomObject]@{ tag = 'primary-image:latest'; volumes = @() }
+            }
+
             Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             Should -Invoke docker
-            $script:capturedDockerArgs -join ' ' | Should -BeLike '*direct-image:v1*'
-            Should -Not -Invoke Resolve-ImageKey
+            Should -Invoke Resolve-ImageKey -ParameterFilter { $Key -eq 'primary' }
         }
     }
 
@@ -279,8 +292,8 @@ Describe 'Invoke-DClaude' {
         It 'merges image-level and project-level volumes' {
             Mock Get-DClaudeConfig {
                 return [PSCustomObject]@{
-                    imageKey = 'pwsh'
-                    volumes  = @('C:/proj-vol:C:/proj-mount:rw')
+                    defaultImageKey = 'pwsh'
+                    volumes         = @('C:/proj-vol:C:/proj-mount:rw')
                 }
             }
             Mock Resolve-ImageKey {
@@ -474,9 +487,9 @@ Describe 'Invoke-DClaude' {
             Should -Not -Invoke docker
         }
 
-        It 'emits only one error when imageKey from project config resolve fails' {
+        It 'emits only one error when defaultImageKey from project config resolve fails' {
             Mock Get-DClaudeConfig {
-                return [PSCustomObject]@{ imageKey = 'missing' }
+                return [PSCustomObject]@{ defaultImageKey = 'missing' }
             }
             Mock Resolve-ImageKey {
                 Write-Error "Image key 'missing' not found"

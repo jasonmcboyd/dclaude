@@ -33,13 +33,19 @@ $manifestParams = @{
     Description       = 'Launch Docker containers with Claude Code pre-installed for isolated development environments.'
     PowerShellVersion = '5.1'
     FunctionsToExport = @(
+        'Add-DClaudeEnvPassthrough'
         'Add-DClaudeImage'
+        'Add-DClaudeVolume'
+        'Get-DClaudeDefaultImageKey'
+        'Get-DClaudeEnvPassthrough'
         'Get-DClaudeImage'
-        'Get-DClaudeProject'
+        'Get-DClaudeVolume'
         'Initialize-DClaudeWindowsContainers'
         'Invoke-DClaude'
+        'Remove-DClaudeEnvPassthrough'
         'Remove-DClaudeImage'
-        'Set-DClaudeProject'
+        'Remove-DClaudeVolume'
+        'Set-DClaudeDefaultImageKey'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

@@ -27,7 +27,7 @@ Export-ModuleMember -Alias 'dclaude'
 
 # Register argument completers
 $script:_completerCache = @{ Platform = $null; Timestamp = [datetime]::MinValue }
-Register-ArgumentCompleter -CommandName 'Set-DClaudeProject' -ParameterName 'ImageKey' -ScriptBlock {
+Register-ArgumentCompleter -CommandName 'Invoke-DClaude' -ParameterName 'ImageKey' -ScriptBlock {
     param($commandName, $parameterName, $wordToComplete, $commandAst, $fakeBoundParameters)
 
     try {

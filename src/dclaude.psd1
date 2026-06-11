@@ -25,13 +25,19 @@
 
     # Functions to export from this module
     FunctionsToExport = @(
+        'Add-DClaudeEnvPassthrough'
         'Add-DClaudeImage'
+        'Add-DClaudeVolume'
+        'Get-DClaudeDefaultImageKey'
+        'Get-DClaudeEnvPassthrough'
         'Get-DClaudeImage'
-        'Get-DClaudeProject'
+        'Get-DClaudeVolume'
         'Initialize-DClaudeWindowsContainers'
         'Invoke-DClaude'
+        'Remove-DClaudeEnvPassthrough'
         'Remove-DClaudeImage'
-        'Set-DClaudeProject'
+        'Remove-DClaudeVolume'
+        'Set-DClaudeDefaultImageKey'
     )
 
     # Cmdlets to export from this module

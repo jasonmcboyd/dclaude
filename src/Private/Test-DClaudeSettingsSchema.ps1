@@ -63,27 +63,41 @@ function Test-DClaudeSettingsSchema {
         }
     }
 
-    # Validate top-level image
-    if ($Config.PSObject.Properties['image'] -and $Config.image -isnot [string]) {
-        $errors += "$Label`: 'image' must be a string"
-    }
-
-    # Validate top-level imageKey
-    if ($Config.PSObject.Properties['imageKey'] -and $Config.imageKey -isnot [string]) {
-        $errors += "$Label`: 'imageKey' must be a string"
-    }
-
     # Validate top-level defaultImageKey
     if ($Config.PSObject.Properties['defaultImageKey'] -and $Config.defaultImageKey -isnot [string]) {
         $errors += "$Label`: 'defaultImageKey' must be a string"
     }
 
-    # Validate top-level volumes
-    if ($Config.PSObject.Properties['volumes'] -and $Config.volumes -isnot [array]) {
-        $errors += "$Label`: 'volumes' must be an array"
+    # Deprecated: top-level image and imageKey (replaced by defaultImageKey)
+    if ($Config.PSObject.Properties['image'] -and $Config.image -isnot [string]) {
+        $errors += "$Label`: 'image' must be a string"
+    }
+    if ($Config.PSObject.Properties['imageKey'] -and $Config.imageKey -isnot [string]) {
+        $errors += "$Label`: 'imageKey' must be a string"
     }
 
-    # Validate top-level commonVolumes (array or {windows:[...], linux:[...]} object)
+    # Validate top-level volumes (array or {windows:[...], linux:[...]} object)
+    if ($Config.PSObject.Properties['volumes']) {
+        $v = $Config.volumes
+        if ($v -is [array]) {
+            # flat array form — valid
+        }
+        elseif ($v -is [PSCustomObject]) {
+            foreach ($platProp in $v.PSObject.Properties) {
+                if ($platProp.Name -notin @('windows', 'linux')) {
+                    $errors += "$Label`: volumes key '$($platProp.Name)' is not valid; expected 'windows' or 'linux'"
+                }
+                elseif ($platProp.Value -isnot [array]) {
+                    $errors += "$Label`: volumes.'$($platProp.Name)' must be an array"
+                }
+            }
+        }
+        else {
+            $errors += "$Label`: 'volumes' must be an array or an object with 'windows'/'linux' keys"
+        }
+    }
+
+    # Deprecated: commonVolumes (renamed to volumes)
     if ($Config.PSObject.Properties['commonVolumes']) {
         $cv = $Config.commonVolumes
         if ($cv -is [array]) {
@@ -102,6 +116,11 @@ function Test-DClaudeSettingsSchema {
         else {
             $errors += "$Label`: 'commonVolumes' must be an array or an object with 'windows'/'linux' keys"
         }
+    }
+
+    # Validate top-level envPassthrough
+    if ($Config.PSObject.Properties['envPassthrough'] -and $Config.envPassthrough -isnot [array]) {
+        $errors += "$Label`: 'envPassthrough' must be an array"
     }
 
     , $errors
