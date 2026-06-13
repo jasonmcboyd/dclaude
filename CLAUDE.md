@@ -158,6 +158,8 @@ The Linux entrypoint reads from `~/.claude/.claude.json` (inside the direct moun
 
 ## Platform Parity
 
+> See [`docs/architecture/platform-bootstrap.md`](docs/architecture/platform-bootstrap.md) for the canonical per-scenario breakdown of all bootstrap mechanics, known fragilities, and planned rework.
+
 Every bug fix or feature must be applied to **all three container targets**:
 
 1. **Windows containers on Windows** (`entrypoint.ps1`)
