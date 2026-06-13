@@ -46,6 +46,7 @@ $manifestParams = @{
         'Remove-DClaudeImage'
         'Remove-DClaudeVolume'
         'Set-DClaudeDefaultImageKey'
+        'Update-DClaudeRuntime'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

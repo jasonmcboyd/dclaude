@@ -12,6 +12,7 @@ BeforeAll {
     . "$PSScriptRoot/../../src/Private/Resolve-ContainerPaths.ps1"
     . "$PSScriptRoot/../../src/Private/Get-VolumeArgs.ps1"
     . "$PSScriptRoot/../../src/Private/Get-EnvironmentPassthroughArgs.ps1"
+    . "$PSScriptRoot/../../src/Private/Get-DClaudeModuleVersion.ps1"
     . "$PSScriptRoot/../../src/Private/Initialize-RuntimeVolume.ps1"
     . "$PSScriptRoot/../../src/Private/Initialize-DockerCliVolume.ps1"
     . "$PSScriptRoot/../../src/Private/Remove-StaleRuntimeVolumes.ps1"
@@ -49,6 +50,9 @@ Describe 'Invoke-DClaude' {
 
         # Suppress project config from leaking in from the real filesystem
         Mock Get-DClaudeConfig { return $null }
+
+        # Mock module-version resolution so naming/paths are deterministic in tests
+        Mock Get-DClaudeModuleVersion { return [version]'0.6.4' }
 
         # Mock runtime volume functions
         Mock Initialize-RuntimeVolume {

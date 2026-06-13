@@ -1,4 +1,17 @@
 function Remove-StaleRuntimeVolumes {
+    <#
+    .SYNOPSIS
+        Removes runtime volumes that have been superseded and are no longer referenced.
+    .DESCRIPTION
+        Reclaims two kinds of stale volumes, never touching one a container still references:
+          - Volumes from OLDER module versions (the current version re-provisions them).
+          - Lower revisions of the CURRENT module version — the launcher and updates always
+            mount/create the highest revision, so superseded lower ones can be reclaimed once
+            nothing references them. The highest revision of the current version is always kept.
+
+        Volumes from NEWER module versions are left alone so a rollback does not force a
+        re-provision.
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -8,17 +21,37 @@ function Remove-StaleRuntimeVolumes {
     $allVolumes = docker volume ls --filter 'name=dclaude-runtime-' --format '{{.Name}}' 2>$null
     if (-not $allVolumes) { return }
 
-    $currentSuffix = "-v$CurrentVersion"
+    # Match the version + optional -rN suffix. The version part allows 2-4 dot-separated
+    # components because volume names are built from [version] stringification ("$Version"),
+    # which renders e.g. 1.0 as "1.0" and 1.0.0.5 as "1.0.0.5" — not always three parts.
+    # This must stay consistent with the name built in New-RuntimeVolume / the launcher.
+    $versionPattern = '-v(\d+(?:\.\d+){1,3})(?:-r(\d+))?$'
+
+    # Find the highest revision of the current module version so we never remove it.
+    $highestCurrentRevision = -1
     foreach ($vol in $allVolumes) {
-        if ($vol -like "*$currentSuffix") { continue }
-
-        # Leave volumes from newer versions alone — the user may have rolled back
-        # and we don't want to force a re-provision on upgrade.
-        if ($vol -match '-v(\d+\.\d+\.\d+)$') {
-            if ([version]$Matches[1] -gt $CurrentVersion) { continue }
+        if ($vol -match $versionPattern -and [version]$Matches[1] -eq $CurrentVersion) {
+            $revision = if ($Matches[2]) { [int]$Matches[2] } else { 0 }
+            if ($revision -gt $highestCurrentRevision) { $highestCurrentRevision = $revision }
         }
+    }
 
-        # Check if any container (running or stopped) references this volume
+    foreach ($vol in $allVolumes) {
+        if ($vol -notmatch $versionPattern) { continue }
+        $volVersion = [version]$Matches[1]
+        $volRevision = if ($Matches[2]) { [int]$Matches[2] } else { 0 }
+
+        if ($volVersion -eq $CurrentVersion) {
+            # Current version: keep the highest revision, reclaim superseded lower ones.
+            if ($volRevision -ge $highestCurrentRevision) { continue }
+        }
+        elseif ($volVersion -gt $CurrentVersion) {
+            # Newer version — the user may have rolled back; leave it alone.
+            continue
+        }
+        # Older version falls through to the in-use guard and removal.
+
+        # Never remove a volume any container (running or stopped) still references.
         $containers = docker ps -a --filter "volume=$vol" --format '{{.ID}}' 2>$null
         if ($containers) { continue }
 

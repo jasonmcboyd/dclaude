@@ -1,4 +1,18 @@
 function Initialize-RuntimeVolume {
+    <#
+    .SYNOPSIS
+        Selects the runtime volume to mount, provisioning one on first run.
+    .DESCRIPTION
+        Runtime volumes are versioned by module version and carry a monotonic revision:
+        'dclaude-runtime-{os}-v{version}' (legacy, revision 0) or
+        'dclaude-runtime-{os}-v{version}-r{N}'. Selection picks the highest-revision
+        populated volume so that an update provisioned by Update-DClaudeRuntime (a new,
+        higher revision) is preferred without disrupting containers still mounting an
+        older revision read-only.
+
+        If no populated volume exists, a new one is provisioned at the next revision.
+        Returns [PSCustomObject]@{ VolumeName; MountPath }, or $null on provisioning failure.
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
@@ -9,69 +23,46 @@ function Initialize-RuntimeVolume {
         [version]$Version
     )
 
-    $volumeName = "dclaude-runtime-$ContainerOS-v$Version"
+    $mountPath = if ($ContainerOS -eq 'linux') { '/opt/dclaude-runtime' } else { 'C:\dclaude-runtime' }
 
-    $nodeVersion = $script:DClaudeVersions.NodeJS
-    $checkLinux = $script:DClaudeImages.ProvisionLinux
-    $checkWindows = $script:DClaudeImages.ProvisionWindows
+    # Enumerate existing runtime volumes for this os+version. The --filter name= match is a
+    # prefix match (so v0.6.4 would also surface v0.6.40), so Get-RuntimeVolumeRevision applies
+    # an anchored regex and returns -1 for names that aren't an exact os+version (+optional -rN) match.
+    $prefix = "dclaude-runtime-$ContainerOS-v$Version"
+    $names = docker volume ls --filter "name=$prefix" --format '{{.Name}}' 2>$null
 
-    if ($ContainerOS -eq 'linux') {
-        $mountPath = '/opt/dclaude-runtime'
-        $volumePopulated = docker run --rm -v "${volumeName}:/check" $checkLinux test -f /check/node/bin/node 2>$null
-        $volumePopulated = ($LASTEXITCODE -eq 0)
+    $maxRevision = -1
+    $bestPopulated = $null   # highest-revision populated volume
+    foreach ($name in $names) {
+        $revision = Get-RuntimeVolumeRevision -Name $name -ContainerOS $ContainerOS -Version $Version
+        if ($revision -lt 0) { continue }
+        if ($revision -gt $maxRevision) { $maxRevision = $revision }
+
+        if ((Test-RuntimeVolumePopulated -ContainerOS $ContainerOS -VolumeName $name) -and
+            ($null -eq $bestPopulated -or $revision -gt $bestPopulated.Revision)) {
+            $bestPopulated = [PSCustomObject]@{ Name = $name; Revision = $revision }
+        }
     }
-    else {
-        $mountPath = 'C:\dclaude-runtime'
-        # Use servercore for both check and provision so the volume is always created
-        # and written by the same container identity. Nanoserver sets restrictive ACLs
-        # on the volume backing directory when it first mounts it, which then prevents
-        # servercore from writing during provisioning ("Access is denied.").
-        $volumePopulated = docker run --rm -v "${volumeName}:C:\check" $checkWindows cmd /c "if exist C:\check\node\node.exe (exit 0) else (exit 1)" 2>$null
-        $volumePopulated = ($LASTEXITCODE -eq 0)
+
+    # A populated volume exists — mount the highest revision, no provisioning needed.
+    if ($bestPopulated) {
+        return [PSCustomObject]@{
+            VolumeName = $bestPopulated.Name
+            MountPath  = $mountPath
+        }
     }
 
-    if (-not $volumePopulated) {
-        Write-Host "[dclaude] Provisioning runtime volume ($volumeName)..." -ForegroundColor DarkGray
-        if ($ContainerOS -eq 'linux') {
-            $provisionImage = $checkLinux
-            $script = ('set -e && apt-get update -qq && apt-get install -y -qq curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x86_64) NODE_ARCH=x64;; aarch64) NODE_ARCH=arm64;; armv7l) NODE_ARCH=armv7l;; *) echo "Unsupported: $ARCH" && exit 1;; esac && mkdir -p /out/node && curl -fsSL "https://nodejs.org/dist/v__NODE__/node-v__NODE__-linux-${NODE_ARCH}.tar.gz" | tar -xz --strip-components=1 -C /out/node && export PATH="/out/node/bin:$PATH" && npm install -g @anthropic-ai/claude-code --prefix /out/node && apt-get install -y -qq git >/dev/null 2>&1 && mkdir -p /out/git/bin /out/git/libexec && cp -a /usr/bin/git* /out/git/bin/ && cp -a /usr/lib/git-core /out/git/libexec/').Replace('__NODE__', $nodeVersion)
-            Write-Verbose "dclaude: provisioning image: $provisionImage"
-            Write-Verbose "dclaude: provisioning script: $script"
-            docker run --rm -v "${volumeName}:/out" $provisionImage sh -c $script | Out-Host
-        }
-        else {
-            $provisionImage = $checkWindows
-            $minGitVersion = $script:DClaudeVersions.MinGit
-            $minGitTag = "v$minGitVersion"
-            $minGitFile = "MinGit-$($minGitVersion.Replace('.windows.', '.'))-64-bit.zip"
-            $script = ('cd C:\out && curl -sLo node.zip https://nodejs.org/dist/v__NODE__/node-v__NODE__-win-x64.zip && tar -xf node.zip && ren node-v__NODE__-win-x64 node && del node.zip && curl -sLo mingit.zip https://github.com/git-for-windows/git/releases/download/__MINGIT_TAG__/__MINGIT_FILE__ && mkdir mingit && tar -xf mingit.zip -C mingit && del mingit.zip && set PATH=C:\out\node;%PATH% && C:\out\node\npm install -g @anthropic-ai/claude-code --prefix C:\out\node && icacls C:\out /grant Everyone:(OI)(CI)F /t /q').Replace('__NODE__', $nodeVersion).Replace('__MINGIT_TAG__', $minGitTag).Replace('__MINGIT_FILE__', $minGitFile)
-            Write-Verbose "dclaude: provisioning image: $provisionImage"
-            Write-Verbose "dclaude: provisioning script: $script"
-            docker run --rm -v "${volumeName}:C:\out" $provisionImage cmd /c $script | Out-Host
-        }
-        if ($LASTEXITCODE -ne 0) {
-            # On Windows, Docker's --rm cleanup can fail to detach the container VHD
-            # (windowsfilter driver issue) and return non-zero even when the provisioning
-            # script itself succeeded. Verify the volume is actually populated before failing.
-            if ($ContainerOS -eq 'windows') {
-                $verifyPopulated = docker run --rm -v "${volumeName}:C:\check" $checkWindows cmd /c "if exist C:\check\node\node.exe (exit 0) else (exit 1)" 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                    Write-Verbose "dclaude: provisioning exit code was non-zero (Docker --rm VHD cleanup issue) but volume is populated — continuing"
-                }
-                else {
-                    Write-Error "Failed to provision runtime volume. Check network connectivity."
-                    return
-                }
-            }
-            else {
-                Write-Error "Failed to provision runtime volume. Check network connectivity."
-                return
-            }
-        }
+    # Nothing populated — provision the next revision (1 when no volumes exist at all).
+    $nextRevision = if ($maxRevision -lt 0) { 1 } else { $maxRevision + 1 }
+    $newName = "$prefix-r$nextRevision"
+
+    if (-not (New-RuntimeVolume -ContainerOS $ContainerOS -VolumeName $newName)) {
+        Write-Error 'Failed to provision runtime volume. Check network connectivity.'
+        return
     }
 
     return [PSCustomObject]@{
-        VolumeName = $volumeName
+        VolumeName = $newName
         MountPath  = $mountPath
     }
 }

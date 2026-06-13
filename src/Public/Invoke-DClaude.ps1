@@ -201,18 +201,7 @@ When a referenced path does not exist:
     }
 
     # Read module version for runtime volume naming
-    $moduleVersion = $MyInvocation.MyCommand.Module.Version
-    if (-not $moduleVersion) {
-        # Fallback: read from .psd1 when running outside a loaded module (e.g. dot-sourced)
-        $psdPath = Join-Path (Split-Path $PSScriptRoot) 'dclaude.psd1'
-        if (Test-Path $psdPath) {
-            $psdContent = Import-PowerShellDataFile $psdPath
-            $moduleVersion = [version]$psdContent.ModuleVersion
-        }
-        else {
-            $moduleVersion = [version]'0.0.0'
-        }
-    }
+    $moduleVersion = Get-DClaudeModuleVersion
 
     # Clean up stale runtime volumes from previous module versions
     Remove-StaleRuntimeVolumes -CurrentVersion $moduleVersion
