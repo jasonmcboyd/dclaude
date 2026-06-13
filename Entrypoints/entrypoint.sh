@@ -139,8 +139,13 @@ if [ "$(id -u)" = "0" ]; then
         echo "[dclaude] Added claude to docker group (GID $sock_gid)" >&2
     fi
 
-    # Fix ownership of home dir (entrypoint ran as root, may have created files as root)
-    chown -Rh claude:claude /home/claude
+    # Fix ownership of home dir (entrypoint ran as root, may have created files as root).
+    # Skip the read-only .claude.json bind mount, which can't be chowned and doesn't need
+    # to be. The trailing `|| true` is critical: under `set -e`, a non-zero chown exit (e.g.
+    # any other read-only mount) would otherwise abort the entrypoint here — before the
+    # exec below — and the container would die silently. Ownership fixup is best-effort.
+    find /home/claude -path /home/claude/.claude/.claude.json -prune -o \
+        -exec chown -h claude:claude {} + || true
 
     # Drop to claude user with ambient capabilities for WSL2 file timestamp support
     if command -v setpriv > /dev/null 2>&1; then
