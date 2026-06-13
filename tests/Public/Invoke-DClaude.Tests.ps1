@@ -16,6 +16,7 @@ BeforeAll {
     . "$PSScriptRoot/../../src/Private/Initialize-RuntimeVolume.ps1"
     . "$PSScriptRoot/../../src/Private/Initialize-DockerCliVolume.ps1"
     . "$PSScriptRoot/../../src/Private/Remove-StaleRuntimeVolumes.ps1"
+    . "$PSScriptRoot/../../src/Private/Update-RuntimeIfOutdated.ps1"
     . "$PSScriptRoot/../../src/Private/Write-LaunchSummary.ps1"
     . "$PSScriptRoot/../../src/Public/Invoke-DClaude.ps1"
 
@@ -68,6 +69,10 @@ Describe 'Invoke-DClaude' {
             }
         }
         Mock Remove-StaleRuntimeVolumes { }
+
+        # Mock the -Update outdated-check to a no-op so it never touches the registry or
+        # provisions volumes during the normal launch-flow assertions.
+        Mock Update-RuntimeIfOutdated { }
 
         # Default .claude.json symlink check — returns a valid symlink target.
         # The 'Windows .claude.json symlink check' context overrides this with Target = $null.
@@ -660,6 +665,28 @@ Describe 'Invoke-DClaude' {
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             Should -Not -Invoke docker
+        }
+    }
+
+    Context '-Update outdated-runtime check' {
+        It 'invokes Update-RuntimeIfOutdated when -Update is specified' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -Update
+
+            Should -Invoke Update-RuntimeIfOutdated -Times 1 -ParameterFilter {
+                $ContainerOS -eq 'windows' -and $ModuleVersion -eq ([version]'0.6.4')
+            }
+        }
+
+        It 'does not invoke Update-RuntimeIfOutdated when -Update is omitted' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Not -Invoke Update-RuntimeIfOutdated
+        }
+
+        It 'still launches the container after the update check' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -Update
+
+            Should -Invoke docker
         }
     }
 

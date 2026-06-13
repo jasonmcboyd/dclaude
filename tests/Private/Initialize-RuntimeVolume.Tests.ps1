@@ -2,6 +2,7 @@ BeforeAll {
     . "$PSScriptRoot/../../src/Private/DClaudeConstants.ps1"
     . "$PSScriptRoot/../../src/Private/Get-RuntimeVolumeRevision.ps1"
     . "$PSScriptRoot/../../src/Private/Test-RuntimeVolumePopulated.ps1"
+    . "$PSScriptRoot/../../src/Private/Get-CurrentRuntimeVolume.ps1"
     . "$PSScriptRoot/../../src/Private/New-RuntimeVolume.ps1"
     . "$PSScriptRoot/../../src/Private/Initialize-RuntimeVolume.ps1"
 

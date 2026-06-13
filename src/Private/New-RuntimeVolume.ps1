@@ -6,8 +6,15 @@ function New-RuntimeVolume {
     .DESCRIPTION
         Runs a stock provisioning image with the given volume mounted read-write and
         populates it with the dclaude runtime. The caller supplies the exact volume name;
-        this function never selects or computes names. When -ClaudeCodeVersion is given,
-        that specific version of @anthropic-ai/claude-code is installed, otherwise latest.
+        this function never selects or computes names.
+
+        Version resolution: if -ClaudeCodeVersion is given, that exact version is installed.
+        Otherwise the concrete latest version is resolved up front via Get-LatestClaudeCodeVersion.
+        When a concrete version is known (either way), the volume is pre-created with a
+        'dclaude.cc-version' label recording it, and Claude Code is pinned to that exact
+        version so the label always matches reality. If the latest version cannot be resolved
+        (e.g. offline), provisioning falls back to installing plain 'latest' with NO label;
+        such a volume reads back as having an unknown version.
 
         This is the single source of truth for provisioning — both Initialize-RuntimeVolume
         (lazy first-run provisioning) and Update-DClaudeRuntime call it.
@@ -28,11 +35,38 @@ function New-RuntimeVolume {
         [string]$ClaudeCodeVersion
     )
 
+    # Callers always compute a brand-new revision name, so an existing name signals a logic
+    # error or a collision from concurrent updates (the user may run many instances at once).
+    # Refuse rather than provision over it: `docker volume create` silently no-ops on an
+    # existing name and ignores the new label, which would leave the label describing a
+    # different version than what actually gets installed.
+    docker volume inspect $VolumeName 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Error "Runtime volume '$VolumeName' already exists; refusing to provision over it."
+        return $false
+    }
+
     $nodeVersion = $script:DClaudeVersions.NodeJS
-    $claudePackage = if ($ClaudeCodeVersion) {
-        "@anthropic-ai/claude-code@$ClaudeCodeVersion"
+
+    # Resolve a concrete version up front so we can both pin the install and stamp it as an
+    # immutable volume label (Docker labels can only be set at volume-create time). Fall back
+    # to a label-less 'latest' install only when the version genuinely can't be resolved.
+    $resolvedVersion = if ($ClaudeCodeVersion) { $ClaudeCodeVersion } else { Get-LatestClaudeCodeVersion }
+    $claudePackage = if ($resolvedVersion) {
+        "@anthropic-ai/claude-code@$resolvedVersion"
     } else {
+        Write-Verbose 'dclaude: latest Claude Code version unresolved — installing plain latest without a version label'
         '@anthropic-ai/claude-code'
+    }
+
+    # Pre-create the volume with the version label when we have a concrete version. Labels are
+    # immutable after creation, so this must happen before the provisioning 'docker run'.
+    if ($resolvedVersion) {
+        docker volume create --label "$script:DClaudeRuntimeVersionLabel=$resolvedVersion" $VolumeName | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "Failed to create runtime volume '$VolumeName'."
+            return $false
+        }
     }
 
     Write-Host "[dclaude] Provisioning runtime volume ($VolumeName)..." -ForegroundColor DarkGray
@@ -71,6 +105,11 @@ function New-RuntimeVolume {
             return $true
         }
     }
+
+    # Provisioning genuinely failed — remove the empty/partial volume so it doesn't linger
+    # as an orphan (Remove-StaleRuntimeVolumes keeps the highest revision and would not
+    # reclaim a stuck empty one at the top of the current version).
+    docker volume rm $VolumeName 2>$null | Out-Null
 
     return $false
 }

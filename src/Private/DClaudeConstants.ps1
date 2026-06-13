@@ -12,3 +12,9 @@ $script:DClaudeImages = @{
     CheckLinux       = 'alpine'
     CheckWindows     = 'mcr.microsoft.com/windows/nanoserver:ltsc2022'
 }
+
+# Docker volume label that records the exact @anthropic-ai/claude-code version baked into
+# a runtime volume. Written by New-RuntimeVolume at creation time (labels are immutable
+# after creation) and read by Get-RuntimeVolumeClaudeVersion. Defined once so the writer
+# and reader cannot drift on the key name.
+$script:DClaudeRuntimeVersionLabel = 'dclaude.cc-version'

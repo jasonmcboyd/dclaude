@@ -34,6 +34,11 @@
 .PARAMETER Force
     Suppresses the Docker access confirmation prompt. Has no effect without -DockerAccess.
 
+.PARAMETER Update
+    Before launching, check whether the runtime volume's Claude Code is older than the latest
+    published version and provision an updated runtime volume if so. Running containers are
+    unaffected.
+
 .EXAMPLE
     Invoke-DClaude -Image 'python:3.12-slim'
 
@@ -74,7 +79,9 @@ function Invoke-DClaude {
 
         [switch]$DockerAccess,
 
-        [switch]$Force
+        [switch]$Force,
+
+        [switch]$Update
     )
 
     # Intercept --help / -h when it's the only remaining argument
@@ -202,6 +209,12 @@ When a referenced path does not exist:
 
     # Read module version for runtime volume naming
     $moduleVersion = Get-DClaudeModuleVersion
+
+    # Optionally provision a fresh runtime volume if the selected one's Claude Code is outdated.
+    # Runs before selection/cleanup so the newly provisioned higher revision is picked up below.
+    if ($Update) {
+        Update-RuntimeIfOutdated -ContainerOS $containerOS -ModuleVersion $moduleVersion
+    }
 
     # Clean up stale runtime volumes from previous module versions
     Remove-StaleRuntimeVolumes -CurrentVersion $moduleVersion

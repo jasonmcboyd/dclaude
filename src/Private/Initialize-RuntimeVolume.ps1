@@ -25,34 +25,29 @@ function Initialize-RuntimeVolume {
 
     $mountPath = if ($ContainerOS -eq 'linux') { '/opt/dclaude-runtime' } else { 'C:\dclaude-runtime' }
 
-    # Enumerate existing runtime volumes for this os+version. The --filter name= match is a
-    # prefix match (so v0.6.4 would also surface v0.6.40), so Get-RuntimeVolumeRevision applies
-    # an anchored regex and returns -1 for names that aren't an exact os+version (+optional -rN) match.
-    $prefix = "dclaude-runtime-$ContainerOS-v$Version"
-    $names = docker volume ls --filter "name=$prefix" --format '{{.Name}}' 2>$null
-
-    $maxRevision = -1
-    $bestPopulated = $null   # highest-revision populated volume
-    foreach ($name in $names) {
-        $revision = Get-RuntimeVolumeRevision -Name $name -ContainerOS $ContainerOS -Version $Version
-        if ($revision -lt 0) { continue }
-        if ($revision -gt $maxRevision) { $maxRevision = $revision }
-
-        if ((Test-RuntimeVolumePopulated -ContainerOS $ContainerOS -VolumeName $name) -and
-            ($null -eq $bestPopulated -or $revision -gt $bestPopulated.Revision)) {
-            $bestPopulated = [PSCustomObject]@{ Name = $name; Revision = $revision }
-        }
-    }
-
     # A populated volume exists — mount the highest revision, no provisioning needed.
-    if ($bestPopulated) {
+    # Selection is shared with the -Update outdated-check so the two cannot drift.
+    $current = Get-CurrentRuntimeVolume -ContainerOS $ContainerOS -Version $Version
+    if ($current) {
         return [PSCustomObject]@{
-            VolumeName = $bestPopulated.Name
+            VolumeName = $current.Name
             MountPath  = $mountPath
         }
     }
 
-    # Nothing populated — provision the next revision (1 when no volumes exist at all).
+    # Nothing populated — provision the next revision. Compute it across ALL volumes for this
+    # os+version (populated or not), so we never collide with an existing-but-empty revision.
+    # The --filter name= match is a prefix match, so Get-RuntimeVolumeRevision applies an
+    # anchored regex and returns -1 for names that aren't an exact match.
+    $prefix = "dclaude-runtime-$ContainerOS-v$Version"
+    $names = docker volume ls --filter "name=$prefix" --format '{{.Name}}' 2>$null
+
+    $maxRevision = -1
+    foreach ($name in $names) {
+        $revision = Get-RuntimeVolumeRevision -Name $name -ContainerOS $ContainerOS -Version $Version
+        if ($revision -gt $maxRevision) { $maxRevision = $revision }
+    }
+
     $nextRevision = if ($maxRevision -lt 0) { 1 } else { $maxRevision + 1 }
     $newName = "$prefix-r$nextRevision"
 
