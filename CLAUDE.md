@@ -169,6 +169,20 @@ Both entrypoints sanitize `.claude.json` before launching Claude Code. The canon
 
 The Linux entrypoint reads from `~/.claude/.claude.json` (inside the direct mount) and writes the sanitized version to `~/.claude.json`. The Windows entrypoint reads from `~/.claude/.claude.json` and writes to `~/.claude.json` (only if the destination doesn't already exist).
 
+## Logging / Verbosity
+
+dclaude mirrors PowerShell's stream discipline across the launcher↔entrypoint boundary. There are three levels; **Info, Warn, and Fatal are always shown**, Verbose and Debug are opt-in:
+
+| Run with | Container env set by launcher | Adds |
+| --- | --- | --- |
+| `dclaude` | — | Info / Warn / Fatal only (session count, init scripts, failures) |
+| `dclaude -Verbose` | `DCLAUDE_VERBOSE=1` | Verbose: launcher detail (provisioning script, image/mount lists) **and** the Go binary's `Verbosef` lines (startup banner, "skipping sanitize" notes) |
+| `dclaude -Debug` | `DCLAUDE_DEBUG=1` | Debug: low-level subprocess noise (e.g. `useradd`/`usermod` output) |
+
+**Mechanism:** `Invoke-DClaude` maps `$VerbosePreference`/`$DebugPreference` to the `DCLAUDE_VERBOSE`/`DCLAUDE_DEBUG` container env vars; the Go entrypoint's `bootstrap.NewLogger` reads them and gates `Verbosef`/`Debugf`. Env vars (not CLI flags) are deliberate: the launcher↔binary contract is env-based, so any future launcher (e.g. a bash peer) inherits the same `-Verbose`/`-Debug` behavior with no per-launcher wiring. Both flags flow through the dev script (`enable-go-entrypoint.ps1 -Verbose`) via PowerShell preference inheritance.
+
+**Two domains:** launcher-side docker orchestration (image pulls, runtime-volume provisioning — all PowerShell-initiated `docker` calls) is governed by PowerShell `-Verbose`; the in-container Go entrypoint by `DCLAUDE_VERBOSE`/`DCLAUDE_DEBUG`. Provisioning *progress* (Node/MinGit/claude download step markers) streams unconditionally; `-Verbose` adds the underlying script/image detail.
+
 ## Platform Parity
 
 > See [`docs/architecture/platform-bootstrap.md`](docs/architecture/platform-bootstrap.md) for the canonical per-scenario breakdown of all bootstrap mechanics, known fragilities, and planned rework.
