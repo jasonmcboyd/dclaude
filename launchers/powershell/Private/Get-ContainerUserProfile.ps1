@@ -21,6 +21,19 @@ function Get-ContainerUserProfile {
 
     $fallback = 'C:/Users/ContainerAdministrator'
 
+    # The probe runs the image, which pulls it if it isn't local yet. For Windows base images
+    # that can be several GB and take many minutes, so pull it explicitly with visible progress
+    # first -- otherwise the suppressed pull below looks like an indefinite hang.
+    docker image inspect $Image *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[dclaude] Pulling $Image (first use; Windows base images can be several GB)..." -ForegroundColor DarkGray
+        docker pull $Image | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Could not pull '$Image' to probe its user profile; using $fallback."
+            return $fallback
+        }
+    }
+
     $out = docker run --rm --entrypoint cmd $Image /c 'echo %USERPROFILE%' 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $out) {
         Write-Warning "Could not probe %USERPROFILE% for image '$Image'; using $fallback."
