@@ -70,6 +70,11 @@ Describe 'Get-DClaudeConfig' {
             $emptyDir = Join-Path $TestDrive 'empty'
             New-Item -Path $emptyDir -ItemType Directory -Force | Out-Null
 
+            # $TestDrive lives under the real user profile; without this the walk-up
+            # would discover the developer's real ~/.dclaude and return its config
+            # instead of $null.
+            Mock Test-Path { $false } -ParameterFilter { $Path -like '*.dclaude' }
+
             $result = Get-DClaudeConfig -Path $emptyDir
             $result | Should -BeNullOrEmpty
         }

@@ -305,10 +305,17 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'merges image-level and project-level volumes' {
+            # Isolate from the real ~/.dclaude user config so its volumes don't leak in.
+            Mock Get-DClaudeUserConfig { return $null }
+            # Use the platform-keyed object format the product supports (see CLAUDE.md).
+            # The container OS here is 'windows' (default Get-DockerContainerOS mock).
             Mock Get-DClaudeConfig {
                 return [PSCustomObject]@{
                     defaultImageKey = 'pwsh'
-                    volumes         = @('C:/proj-vol:C:/proj-mount:rw')
+                    volumes         = [PSCustomObject]@{
+                        windows = @('C:/proj-vol:C:/proj-mount:rw')
+                        linux   = @()
+                    }
                 }
             }
             Mock Resolve-ImageKey {
@@ -408,6 +415,9 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'does not set DCLAUDE_VOLUMES when there are no additional volumes' {
+            # Isolate from the real ~/.dclaude user config so its volumes don't leak in.
+            Mock Get-DClaudeUserConfig { return $null }
+
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
@@ -593,9 +603,15 @@ Describe 'Invoke-DClaude' {
         It 'prompts for confirmation without -Force (non-interactive throws)' {
             Mock Get-DockerContainerOS { return 'linux' }
 
-            # In non-interactive mode, ShouldContinue throws — proving the prompt fires
+            # In a non-interactive host, ShouldContinue cannot prompt and throws —
+            # proving the confirmation prompt fired. The exact exception text varies
+            # by PowerShell host (some hosts surface 'NonInteractive', others a
+            # NullReference from the absent UI), so we assert only that it throws and
+            # that docker was never invoked, rather than pinning host-specific wording.
             { Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -DockerAccess } |
-                Should -Throw '*NonInteractive*'
+                Should -Throw
+
+            Should -Not -Invoke docker
         }
 
         It 'skips confirmation prompt when -Force is specified' {

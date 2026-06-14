@@ -39,6 +39,10 @@ Describe 'Resolve-SettingsScope' {
             $emptyDir = Join-Path $TestDrive 'empty'
             New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
 
+            # $TestDrive lives under the real user profile; without this the walk-up
+            # would discover the developer's real ~/.dclaude and not error.
+            Mock Test-Path { $false } -ParameterFilter { $Path -like '*.dclaude' }
+
             $result = Resolve-SettingsScope -Scope Project -Path $emptyDir -ErrorVariable err -ErrorAction SilentlyContinue
             $result | Should -BeNullOrEmpty
             $err | Should -Not -BeNullOrEmpty
@@ -60,6 +64,10 @@ Describe 'Resolve-SettingsScope' {
         It 'errors when no .dclaude directory exists' {
             $emptyDir = Join-Path $TestDrive 'empty2'
             New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+
+            # $TestDrive lives under the real user profile; without this the walk-up
+            # would discover the developer's real ~/.dclaude and not error.
+            Mock Test-Path { $false } -ParameterFilter { $Path -like '*.dclaude' }
 
             $result = Resolve-SettingsScope -Scope ProjectLocal -Path $emptyDir -ErrorVariable err -ErrorAction SilentlyContinue
             $result | Should -BeNullOrEmpty

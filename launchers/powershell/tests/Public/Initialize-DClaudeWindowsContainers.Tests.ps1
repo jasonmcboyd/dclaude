@@ -22,15 +22,23 @@ Describe 'Initialize-DClaudeWindowsContainers' {
 
     Context 'when .claude.json is already a symlink' {
         It 'returns without error' {
-            New-Item -ItemType Directory -Path $script:claudeDir -Force | Out-Null
-            $target = Join-Path $script:claudeDir '.claude.json'
-            '{}' | Set-Content $target
-            New-Item -ItemType SymbolicLink -Path $script:claudeJsonPath -Target $target -Force | Out-Null
+            # Creating a real symlink requires Administrator/Developer Mode, so we
+            # simulate an existing symlink by mocking Get-Item to report a .Target.
+            # This exercises the function's early-return path without a real link.
+            '{}' | Set-Content $script:claudeJsonPath
+            Mock Get-Item { [PSCustomObject]@{ Target = $script:claudeJsonPath } } `
+                -ParameterFilter { $Path -like '*.claude.json' }
 
-            Initialize-DClaudeWindowsContainers -ClaudeConfigPath $script:claudeDir
+            # No SymbolicLink should be created and nothing should be copied.
+            Mock New-Item { throw 'New-Item should not be called on the early-return path' } `
+                -ParameterFilter { $ItemType -eq 'SymbolicLink' }
+            Mock Copy-Item { throw 'Copy-Item should not be called on the early-return path' }
 
-            # Should still be a symlink pointing at the original target
-            (Get-Item -Force $script:claudeJsonPath).Target | Should -Not -BeNullOrEmpty
+            { Initialize-DClaudeWindowsContainers -ClaudeConfigPath $script:claudeDir } |
+                Should -Not -Throw
+
+            Should -Not -Invoke New-Item -ParameterFilter { $ItemType -eq 'SymbolicLink' }
+            Should -Not -Invoke Copy-Item
         }
     }
 
@@ -40,21 +48,44 @@ Describe 'Initialize-DClaudeWindowsContainers' {
         }
 
         It 'copies into .claude directory and creates symlink' {
+            # Mock the SymbolicLink creation (needs admin) to succeed without making
+            # a real link. The Copy-Item into the .claude dir is real and needs no admin.
+            Mock New-Item { } -ParameterFilter { $ItemType -eq 'SymbolicLink' }
+
             Initialize-DClaudeWindowsContainers -ClaudeConfigPath $script:claudeDir
 
             $claudeJsonInDir = Join-Path $script:claudeDir '.claude.json'
+            # The real copy into the .claude directory happened.
             Test-Path $claudeJsonInDir | Should -BeTrue
             (Get-Content $claudeJsonInDir -Raw).Trim() | Should -Be '{ "key": "value" }'
-            (Get-Item -Force $script:claudeJsonPath).Target | Should -Not -BeNullOrEmpty
+
+            # The symlink was created at the original path, pointing into the .claude dir.
+            Should -Invoke New-Item -Times 1 -Exactly -ParameterFilter {
+                $ItemType -eq 'SymbolicLink' -and
+                $Path -eq $script:claudeJsonPath -and
+                $Target -eq $claudeJsonInDir
+            }
         }
 
         It 'is idempotent (second run sees the symlink and returns early)' {
-            Initialize-DClaudeWindowsContainers -ClaudeConfigPath $script:claudeDir
-            Initialize-DClaudeWindowsContainers -ClaudeConfigPath $script:claudeDir
-
             $claudeJsonInDir = Join-Path $script:claudeDir '.claude.json'
+
+            # First run: simulate successful symlink creation without a real link.
+            Mock New-Item { } -ParameterFilter { $ItemType -eq 'SymbolicLink' }
+            Initialize-DClaudeWindowsContainers -ClaudeConfigPath $script:claudeDir
             Test-Path $claudeJsonInDir | Should -BeTrue
-            (Get-Item -Force $script:claudeJsonPath).Target | Should -Not -BeNullOrEmpty
+
+            # Second run: simulate the path now being a symlink so the early-return
+            # path is exercised — no further copy/symlink work should occur.
+            Mock Get-Item { [PSCustomObject]@{ Target = $claudeJsonInDir } } `
+                -ParameterFilter { $Path -like '*.claude.json' }
+            Mock Copy-Item { throw 'Copy-Item should not run on the idempotent second pass' }
+
+            { Initialize-DClaudeWindowsContainers -ClaudeConfigPath $script:claudeDir } |
+                Should -Not -Throw
+
+            Should -Not -Invoke Copy-Item
+            Test-Path $claudeJsonInDir | Should -BeTrue
         }
 
         It 'does not modify files when -WhatIf is used' {
