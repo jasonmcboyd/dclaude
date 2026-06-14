@@ -290,6 +290,22 @@ Describe 'New-RuntimeVolume' {
             $run | Should -Not -BeLike '*releases/download*'
         }
 
+        It 'injects a locally built binary by mounting its directory (Windows cannot mount a file)' {
+            Mock Test-GoEntrypointEnabled { $true }
+            $env:DCLAUDE_ENTRYPOINT_SRC = 'C:\build\dclaude-entrypoint.exe'
+
+            New-RuntimeVolume -ContainerOS 'windows' -VolumeName 'v' -ClaudeCodeVersion '1.2.3' | Out-Null
+
+            $run = Get-RunCall
+            # The directory is mounted (not the single file), and the specific exe is copied out.
+            $run | Should -BeLike '*C:\build:C:\in:ro*'
+            $run | Should -Not -BeLike '*dclaude-entrypoint.exe:C:\in*'
+            $run | Should -BeLike '*copy /Y C:\in\dclaude-entrypoint.exe C:\out\bin\dclaude-entrypoint.exe*'
+            # local-source path must not download the binary asset (MinGit's URL also contains
+            # 'releases/download', so assert on the entrypoint asset name specifically).
+            $run | Should -Not -BeLike '*dclaude-entrypoint-windows-amd64*'
+        }
+
         It 'does not resolve the module version on the local-source path' {
             Mock Test-GoEntrypointEnabled { $true }
             Mock Get-DClaudeModuleVersion { throw 'should not be called' }

@@ -109,7 +109,10 @@ function New-RuntimeVolume {
         $binSegment = ''
         if ($goEnabled) {
             $binSegment = if ($entrypointSrc) {
-                ' && mkdir C:\out\bin && copy /Y C:\in\dclaude-entrypoint.exe C:\out\bin\dclaude-entrypoint.exe'
+                # Windows containers cannot bind-mount a single file, so the source binary's
+                # directory is mounted at C:\in and we copy that specific file out.
+                $srcLeaf = Split-Path $entrypointSrc -Leaf
+                " && mkdir C:\out\bin && copy /Y C:\in\$srcLeaf C:\out\bin\dclaude-entrypoint.exe"
             } else {
                 ' && mkdir C:\out\bin && curl -sLo C:\out\bin\dclaude-entrypoint.exe __REL__/v__VER__/dclaude-entrypoint-windows-amd64.exe'
             }
@@ -117,7 +120,7 @@ function New-RuntimeVolume {
         # The binary segment is inserted BEFORE icacls so the new bin dir inherits the grant.
         $script = ('cd C:\out && curl -sLo node.zip https://nodejs.org/dist/v__NODE__/node-v__NODE__-win-x64.zip && tar -xf node.zip && ren node-v__NODE__-win-x64 node && del node.zip && curl -sLo mingit.zip https://github.com/git-for-windows/git/releases/download/__MINGIT_TAG__/__MINGIT_FILE__ && mkdir mingit && tar -xf mingit.zip -C mingit && del mingit.zip && set PATH=C:\out\node;%PATH% && C:\out\node\npm install -g __CLAUDE__ --prefix C:\out\node' + $binSegment + ' && icacls C:\out /grant Everyone:(OI)(CI)F /t /q').Replace('__NODE__', $nodeVersion).Replace('__MINGIT_TAG__', $minGitTag).Replace('__MINGIT_FILE__', $minGitFile).Replace('__CLAUDE__', $claudePackage).Replace('__REL__', $script:DClaudeReleaseBaseUrl).Replace('__VER__', $entrypointVersion)
         $runArgs = @('run', '--rm', '-v', "${VolumeName}:C:\out")
-        if ($goEnabled -and $entrypointSrc) { $runArgs += @('-v', "${entrypointSrc}:C:\in\dclaude-entrypoint.exe:ro") }
+        if ($goEnabled -and $entrypointSrc) { $runArgs += @('-v', "$(Split-Path $entrypointSrc):C:\in:ro") }
         $runArgs += @($provisionImage, 'cmd', '/c', $script)
         Write-Verbose "dclaude: provisioning image: $provisionImage"
         Write-Verbose "dclaude: provisioning script: $script"
