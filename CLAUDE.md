@@ -163,6 +163,7 @@ Both entrypoints sanitize `.claude.json` before launching Claude Code. The canon
 | --- | --- |
 | `projects` | Delete (host paths), then re-create with container workspace path pre-accepted. MCP fields (`mcpServers`, `mcpContextUris`, `enabledMcpjsonServers`, `disabledMcpjsonServers`) are preserved from the matching host project entry. |
 | `githubRepoPaths` | Delete (host-specific paths) |
+| `installMethod` / `autoUpdatesProtectedForNative` | Delete (host install descriptors — e.g. `native` points claude at `~/.local/bin/claude`, which doesn't exist in the container where claude is the npm install in the runtime volume; stripping avoids a spurious `/doctor` warning) |
 | `officialMarketplaceAutoInstallAttempted` | Set to `true` (skip marketplace prompt) |
 | `officialMarketplaceAutoInstalled` | Set to `true` (skip marketplace prompt) |
 

@@ -59,6 +59,11 @@ if ((Test-Path $claudeJsonInDir) -and -not (Test-Path $claudeJson)) {
 
     $cfg.PSObject.Properties.Remove('projects')
     $cfg.PSObject.Properties.Remove('githubRepoPaths')
+    # Host install descriptors (e.g. 'native' -> ~/.local/bin/claude) are wrong in the
+    # container, where claude is the npm install in the runtime volume; stripping them
+    # avoids a spurious /doctor 'missing native binary' warning.
+    $cfg.PSObject.Properties.Remove('installMethod')
+    $cfg.PSObject.Properties.Remove('autoUpdatesProtectedForNative')
 
     $cfg | Add-Member -MemberType NoteProperty -Name 'officialMarketplaceAutoInstallAttempted' -Value $true -Force
     $cfg | Add-Member -MemberType NoteProperty -Name 'officialMarketplaceAutoInstalled' -Value $true -Force

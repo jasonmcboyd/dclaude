@@ -80,6 +80,11 @@ if [ -f "$CLAUDE_JSON_SOURCE" ]; then
 
         delete cfg.projects;
         delete cfg.githubRepoPaths;
+        // Host install descriptors (e.g. 'native' -> ~/.local/bin/claude) are wrong in the
+        // container, where claude is the npm install in the runtime volume; stripping them
+        // avoids a spurious /doctor 'missing native binary' warning.
+        delete cfg.installMethod;
+        delete cfg.autoUpdatesProtectedForNative;
         cfg.officialMarketplaceAutoInstallAttempted = true;
         cfg.officialMarketplaceAutoInstalled = true;
         cfg.projects = { [workspace]: { allowedTools: [], hasTrustDialogAccepted: true, ...preserved } };

@@ -37,6 +37,12 @@ func Sanitize(source []byte, workspaceKey, hostPath string) ([]byte, error) {
 	// Denylist: strip the known host-specific top-level keys. Everything else stays.
 	delete(root, "projects")
 	delete(root, "githubRepoPaths")
+	// installMethod / autoUpdatesProtectedForNative describe how Claude Code was installed
+	// on the HOST (e.g. "native" -> ~/.local/bin/claude). Inside the container claude is the
+	// npm install in the read-only runtime volume, so carrying these through makes /doctor
+	// warn that the native binary is missing. Strip them so claude detects its real location.
+	delete(root, "installMethod")
+	delete(root, "autoUpdatesProtectedForNative")
 
 	// Suppress the marketplace install prompt.
 	root["officialMarketplaceAutoInstallAttempted"] = true

@@ -34,6 +34,8 @@ func TestSanitize_StripsHostKeysAndForcesTrust(t *testing.T) {
 	src := []byte(`{
 		"projects": {"C:\\Users\\me\\proj": {"allowedTools": ["Bash"], "mcpServers": {"x": 1}, "lastSessionId": "abc"}},
 		"githubRepoPaths": {"a": "b"},
+		"installMethod": "native",
+		"autoUpdatesProtectedForNative": true,
 		"oauthAccount": {"id": "keep-me"},
 		"someFutureField": 42
 	}`)
@@ -46,6 +48,12 @@ func TestSanitize_StripsHostKeysAndForcesTrust(t *testing.T) {
 
 	if _, ok := m["githubRepoPaths"]; ok {
 		t.Error("githubRepoPaths should be stripped")
+	}
+	if _, ok := m["installMethod"]; ok {
+		t.Error("installMethod (host install descriptor) should be stripped")
+	}
+	if _, ok := m["autoUpdatesProtectedForNative"]; ok {
+		t.Error("autoUpdatesProtectedForNative should be stripped")
 	}
 	if m["officialMarketplaceAutoInstallAttempted"] != true || m["officialMarketplaceAutoInstalled"] != true {
 		t.Error("marketplace flags should both be true")
