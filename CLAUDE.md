@@ -9,7 +9,7 @@ every launcher targets, and **launchers** (host-side thin clients) that drive `d
 PowerShell is the first launcher; a bash launcher is the planned next peer.
 
 ```
-entrypoint/                     # Go: the in-container bootstrap binary (shipped in the runtime volume)
+entrypoint/                     # Go: the in-container bootstrap binary (shipped inside the PowerShell module)
   go.mod                        #   module github.com/jasonmcboyd/dclaude/entrypoint
   main.go                       #   forwards args to claude; dispatches by GOOS
   internal/
@@ -24,8 +24,8 @@ launchers/
     Public/                     #   exported functions
     Private/                    #   internal helper functions
     tests/                      #   Pester 5 tests mirroring Public/ and Private/
-    scripts/                    #   create-module-manifest.ps1 (CI manifest gen), reset-dev-environment.ps1
-    entrypoints/                #   legacy shell entrypoints (entrypoint.ps1/.sh) — removed at Go cutover
+    scripts/                    #   create-module-manifest.ps1 (CI manifest gen), reset-dev-environment.ps1, use-dev-entrypoint.ps1, test-package-deploy.ps1
+    bin/                        #   compiled Go entrypoint binaries (dclaude-entrypoint-<os>-<arch>[.exe]); built by CI, gitignored
 docs/architecture/             # platform-bootstrap.md, go-entrypoint-design.md
 .github/workflows/
   publish-release.yml          # CI/CD: build Go binaries + publish module to PSGallery on tag (v*)
@@ -100,15 +100,15 @@ Instead of building custom Docker images, dclaude injects Node.js + Claude Code 
 - Stale volumes from previous module versions are cleaned up by `Remove-StaleRuntimeVolumes.ps1`
 - The Docker CLI volume (`dclaude-docker-cli-*`) has a separate lifecycle, opt-in via `-DockerAccess`
 
-Entrypoint scripts are mounted from the host module's `Entrypoints/` directory at `docker run` time (not baked into images). This means changes to entrypoints take effect immediately without any rebuild.
+The runtime volume contains only Node.js + Claude Code (+ MinGit on Windows / bundled git on Linux). The Go entrypoint binary is **not** in the volume — it ships inside the PowerShell module under `bin/` and is mounted into the container at launch (see Container Mounting Strategy).
 
 **Alpine limitation:** Alpine-based images (musl libc) are not currently supported. The runtime volume uses glibc-linked Node.js binaries.
 
 ### Container Mounting Strategy
 
 - Workspace → mounted at the **host path** (translated for cross-platform: `C:\Users\jason\repos` → `/c/Users/jason/repos` on Linux containers), read-write
-- Runtime volume → mounted read-only (Node.js + Claude Code)
-- Entrypoint script → mounted read-only from host `Entrypoints/` directory
+- Runtime volume → mounted read-only (Node.js + Claude Code only — no entrypoint binary)
+- Go entrypoint binary → the platform-appropriate binary from `bin/` is mounted read-only at launch. On Windows the launcher first stages the binary to a content-hashed `%LOCALAPPDATA%\dclaude\.bin\<hash>\` directory and mounts that directory (Windows can't bind-mount a single file; staging also avoids OneDrive reparse points and the running-executable lock). Dev override: `DCLAUDE_ENTRYPOINT_SRC` points at a locally built binary.
 - `~/.claude` → mounted **directly** at the container's `~/.claude` (`/home/claude/.claude` on Linux, `C:/Users/ContainerAdministrator/.claude` on Windows), read-write
 - `.claude.json` → Linux: nested read-only bind mount inside the `.claude` directory mount; Windows: symlinked into `~/.claude/` by `Initialize-DClaudeWindowsContainers`
 - Linux cross-platform directories (`plugins/`, `session-env/`) → masked with tmpfs overlays to hide Windows-specific content
@@ -133,31 +133,31 @@ The launcher (`Invoke-DClaude`) **bind-mounts** the host project directory direc
 
 ### Project Key Derivation
 
-The project key is derived from the workspace path by replacing all `/`, `\`, and `:` characters with `-`. This algorithm is used in three places and must stay in sync:
+The project key is derived from the workspace path by replacing all `/`, `\`, and `:` characters with `-`. This algorithm is used in two places and must stay in sync:
 
 1. **Launcher** (`Resolve-ContainerPaths.ps1`): `$containerKey = $workspace -replace '[/\\:]', '-'`
-2. **Linux entrypoint** (`entrypoint.sh`): `container_key=$(printf '%s' "$WORKSPACE" | sed 's/[/\\:]/-/g')`
-3. **Windows entrypoint** (`entrypoint.ps1`): `$containerKey = $Workspace -replace '[/\\:]', '-'`
+2. **Go entrypoint** (`internal/bootstrap/`): same substitution applied to the container-side workspace path
 
 The host-side key (for locating the project dir on the host) is derived from the original host path. The container-side key is derived from the translated workspace path.
 
-### Entrypoints
+### Entrypoint
 
-Both entrypoints (`.ps1` and `.sh`) are mounted from the host `Entrypoints/` directory and follow the same pattern:
+The Go binary (`dclaude-entrypoint-<os>-<arch>[.exe]`) is the sole container entrypoint. It is built from the `entrypoint/` Go module, shipped inside the PowerShell module under `bin/`, and mounted read-only into the container at launch. There are no shell entrypoints. The bootstrap sequence is:
+
 1. Set up PATH to include the runtime volume's Node.js (and MinGit on Windows)
-2. Create `claude` user if not exists (Linux only — stock images won't have it)
+2. Create `claude` user at UID 1000 if not exists (Linux only — stock images won't have it)
 3. Configure git safe.directory for the workspace
-4. Sanitize `.claude.json` (strip host paths, pre-accept workspace, preserve MCP config)
+4. Sanitize `.claude.json` (strip host paths, pre-accept workspace, preserve MCP config) via the `sanitize` package
 5. Detect project dir bind mount and report session count
 6. Run init scripts from `/mnt/init.d/` directories (user-common, user-image, project-common, project-image)
 7. Link Docker CLI from provisioned volume (if `-DockerAccess` was used)
-8. `exec claude --dangerously-skip-permissions`
+8. Exec/launch `claude --dangerously-skip-permissions` (Linux: `exec` syscall; Windows: spawn and propagate exit code — there is no `exec` on Windows)
 
-**Known limitation (Windows):** The Windows entrypoint uses `& claude.cmd` rather than `exec` (which has no PowerShell equivalent). Claude runs as a child of PowerShell (PID 1), so `docker stop` signals may not propagate cleanly. This is a platform limitation, not a bug.
+Platform-specific behavior is isolated in `internal/platform/linux.go` and `internal/platform/windows.go` (build-tagged). All other bootstrap logic is shared.
 
 ### `.claude.json` Sanitization Rules
 
-Both entrypoints sanitize `.claude.json` before launching Claude Code. The canonical transformations are:
+The Go `sanitize` package performs all `.claude.json` transformations before Claude Code launches. There is one implementation for all platforms. The canonical transformations are:
 
 | Field | Action |
 | --- | --- |
@@ -167,7 +167,7 @@ Both entrypoints sanitize `.claude.json` before launching Claude Code. The canon
 | `officialMarketplaceAutoInstallAttempted` | Set to `true` (skip marketplace prompt) |
 | `officialMarketplaceAutoInstalled` | Set to `true` (skip marketplace prompt) |
 
-The Linux entrypoint reads from `~/.claude/.claude.json` (inside the direct mount) and writes the sanitized version to `~/.claude.json`. The Windows entrypoint reads from `~/.claude/.claude.json` and writes to `~/.claude.json` (only if the destination doesn't already exist).
+The Go entrypoint reads from `~/.claude/.claude.json` (inside the direct `~/.claude` mount) and writes the sanitized result to `~/.claude.json`.
 
 ## Logging / Verbosity
 
@@ -179,7 +179,7 @@ dclaude mirrors PowerShell's stream discipline across the launcher↔entrypoint 
 | `dclaude -Verbose` | `DCLAUDE_VERBOSE=1` | Verbose: launcher detail (provisioning script, image/mount lists) **and** the Go binary's `Verbosef` lines (startup banner, "skipping sanitize" notes) |
 | `dclaude -Debug` | `DCLAUDE_DEBUG=1` | Debug: low-level subprocess noise (e.g. `useradd`/`usermod` output) |
 
-**Mechanism:** `Invoke-DClaude` maps `$VerbosePreference`/`$DebugPreference` to the `DCLAUDE_VERBOSE`/`DCLAUDE_DEBUG` container env vars; the Go entrypoint's `bootstrap.NewLogger` reads them and gates `Verbosef`/`Debugf`. Env vars (not CLI flags) are deliberate: the launcher↔binary contract is env-based, so any future launcher (e.g. a bash peer) inherits the same `-Verbose`/`-Debug` behavior with no per-launcher wiring. Both flags flow through the dev script (`enable-go-entrypoint.ps1 -Verbose`) via PowerShell preference inheritance.
+**Mechanism:** `Invoke-DClaude` maps `$VerbosePreference`/`$DebugPreference` to the `DCLAUDE_VERBOSE`/`DCLAUDE_DEBUG` container env vars; the Go entrypoint's `bootstrap.NewLogger` reads them and gates `Verbosef`/`Debugf`. Env vars (not CLI flags) are deliberate: the launcher↔binary contract is env-based, so any future launcher (e.g. a bash peer) inherits the same `-Verbose`/`-Debug` behavior with no per-launcher wiring. Both flags flow through the dev script (`use-dev-entrypoint.ps1 -Verbose`) via PowerShell preference inheritance.
 
 **Two domains:** launcher-side docker orchestration (image pulls, runtime-volume provisioning — all PowerShell-initiated `docker` calls) is governed by PowerShell `-Verbose`; the in-container Go entrypoint by `DCLAUDE_VERBOSE`/`DCLAUDE_DEBUG`. Provisioning *progress* (Node/MinGit/claude download step markers) streams unconditionally; `-Verbose` adds the underlying script/image detail.
 
@@ -187,13 +187,13 @@ dclaude mirrors PowerShell's stream discipline across the launcher↔entrypoint 
 
 > See [`docs/architecture/platform-bootstrap.md`](docs/architecture/platform-bootstrap.md) for the canonical per-scenario breakdown of all bootstrap mechanics, known fragilities, and planned rework.
 
-Every bug fix or feature must be applied to **all three container targets**:
+Every bug fix or feature must be verified against **all three runtime scenarios**:
 
-1. **Windows containers on Windows** (`entrypoint.ps1`)
-2. **Linux containers on Windows** (`entrypoint.sh`)
-3. **Linux containers on Linux** (`entrypoint.sh`)
+1. **Windows containers on Windows**
+2. **Linux containers on Windows**
+3. **Linux containers on Linux**
 
-The Windows and Linux entrypoints implement the same logic in different languages. When changing one, always check if the other needs the same change — but note that achieving the same effective behavior may require a different implementation on each platform (e.g., different permission models, path formats, symlink semantics). The launcher (`Invoke-DClaude.ps1`) already branches on `$containerOS` for path differences.
+Parity is enforced by a single Go codebase: shared bootstrap logic in `internal/bootstrap/`, with platform-specific behavior isolated in `internal/platform/linux.go` and `internal/platform/windows.go` (build-tagged). The launcher (`Invoke-DClaude.ps1`) also branches on `$containerOS` for path translation and mount construction. When changing bootstrap behavior, check whether the change requires a platform-specific implementation in one or both of the `platform/` files.
 
 ## Conventions
 
