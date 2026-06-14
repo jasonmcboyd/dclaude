@@ -48,7 +48,9 @@ func Sanitize(source []byte, workspaceKey, hostPath string) ([]byte, error) {
 	root["officialMarketplaceAutoInstallAttempted"] = true
 	root["officialMarketplaceAutoInstalled"] = true
 
-	// Re-key the workspace's project entry and force trust acceptance.
+	// Re-key the workspace's project entry and force trust acceptance. Claude Code keys its
+	// projects map with forward slashes, so a Windows workspace path (C:\...) must be
+	// normalized to C:/... or the pre-acceptance won't match and claude re-prompts for trust.
 	if entry == nil {
 		entry = map[string]any{}
 	}
@@ -56,7 +58,7 @@ func Sanitize(source []byte, workspaceKey, hostPath string) ([]byte, error) {
 	if _, ok := entry["allowedTools"]; !ok {
 		entry["allowedTools"] = []any{}
 	}
-	root["projects"] = map[string]any{workspaceKey: entry}
+	root["projects"] = map[string]any{strings.ReplaceAll(workspaceKey, `\`, "/"): entry}
 
 	out, err := json.MarshalIndent(root, "", "  ")
 	if err != nil {

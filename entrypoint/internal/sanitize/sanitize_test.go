@@ -108,6 +108,23 @@ func TestSanitize_NoProjectsStillPreAcceptsWorkspace(t *testing.T) {
 	}
 }
 
+func TestSanitize_NormalizesWindowsWorkspaceKeyToForwardSlashes(t *testing.T) {
+	// Claude Code keys its projects map with forward slashes; a Windows workspace path must be
+	// pre-accepted under the forward-slash form or claude re-prompts for trust.
+	out, err := Sanitize([]byte(`{}`), `C:\Users\me\proj`, "")
+	if err != nil {
+		t.Fatalf("Sanitize: %v", err)
+	}
+	m := mustParse(t, out)
+	if _, ok := m["projects"].(map[string]any)["C:\\Users\\me\\proj"]; ok {
+		t.Error("workspace must not be keyed with backslashes")
+	}
+	entry := projectEntry(t, m, "C:/Users/me/proj")
+	if entry["hasTrustDialogAccepted"] != true {
+		t.Error("forward-slash workspace key should be trust-accepted")
+	}
+}
+
 func TestSanitize_ParseErrorIsReturned(t *testing.T) {
 	if _, err := Sanitize([]byte(`{not json`), "/workspace", ""); err == nil {
 		t.Fatal("expected a parse error for corrupt JSON")
