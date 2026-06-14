@@ -359,6 +359,10 @@ When a referenced path does not exist:
         $dockerArgs += '-e'
         $dockerArgs += 'DCLAUDE_VERBOSE=1'
     }
+    if ($DebugPreference -eq 'Continue') {
+        $dockerArgs += '-e'
+        $dockerArgs += 'DCLAUDE_DEBUG=1'
+    }
 
     # Go entrypoint contract: host-OS seam, the container ~/.claude path, and the contract version.
     if ($goBinary) {

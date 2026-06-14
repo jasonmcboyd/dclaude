@@ -466,16 +466,16 @@ Describe 'Invoke-DClaude' {
     }
 
     Context 'mount display on startup' {
-        It 'writes volume mounts to host before launching' {
-            Mock Write-Host { }
+        It 'writes the volume detail to the verbose stream before launching' {
+            Mock Write-Verbose { }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
-            Should -Invoke Write-Host -ParameterFilter { $Object -eq '[dclaude] Mounting volumes:' }
+            Should -Invoke Write-Verbose -ParameterFilter { $Message -eq '[dclaude] Mounting volumes:' }
         }
 
-        It 'displays user-configured volumes' {
-            Mock Write-Host { }
+        It 'lists user-configured volumes on the verbose stream' {
+            Mock Write-Verbose { }
             Mock Resolve-ImageKey {
                 return [PSCustomObject]@{
                     tag     = 'dclaude-pwsh:latest'
@@ -485,7 +485,7 @@ Describe 'Invoke-DClaude' {
 
             Invoke-DClaude -ImageKey 'pwsh' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
-            Should -Invoke Write-Host -ParameterFilter { $Object -like '*C:/host-data:C:/container-data*' }
+            Should -Invoke Write-Verbose -ParameterFilter { $Message -like '*C:/host-data:C:/container-data*' }
         }
     }
 
@@ -804,6 +804,19 @@ Describe 'Invoke-DClaude' {
 
             $argsString = $script:capturedDockerArgs -join ' '
             $argsString | Should -BeLike '*DCLAUDE_CONTAINER=1*'
+        }
+
+        It 'passes DCLAUDE_DEBUG=1 when debug output is active' {
+            $DebugPreference = 'Continue'
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            ($script:capturedDockerArgs -join ' ') | Should -BeLike '*DCLAUDE_DEBUG=1*'
+        }
+
+        It 'omits DCLAUDE_DEBUG by default' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            ($script:capturedDockerArgs -join ' ') | Should -Not -BeLike '*DCLAUDE_DEBUG*'
         }
     }
 

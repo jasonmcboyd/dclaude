@@ -11,6 +11,8 @@ function Write-LaunchSummary {
         [string[]]$DockerArgs
     )
 
+    # The image is default-visible status; the detailed mount + env breakdown is verbose
+    # (inspect it with -Verbose) so normal output stays clean.
     if ($ImageName) {
         Write-Host "[dclaude] Image: $ImageName ($ImageTag)" -ForegroundColor DarkGray
     }
@@ -18,10 +20,10 @@ function Write-LaunchSummary {
         Write-Host "[dclaude] Image: $ImageTag" -ForegroundColor DarkGray
     }
 
-    Write-Host "[dclaude] Mounting volumes:" -ForegroundColor DarkGray
+    Write-Verbose "[dclaude] Mounting volumes:"
     for ($i = 0; $i -lt $DockerArgs.Count; $i++) {
         if ($DockerArgs[$i] -eq '-v' -and ($i + 1) -lt $DockerArgs.Count) {
-            Write-Host "  $($DockerArgs[$i + 1])" -ForegroundColor DarkGray
+            Write-Verbose "  $($DockerArgs[$i + 1])"
         }
     }
 
@@ -32,11 +34,9 @@ function Write-LaunchSummary {
         }
     }
     if ($envVars.Count -gt 0) {
-        Write-Host "[dclaude] Environment variables:" -ForegroundColor DarkGray
+        Write-Verbose "[dclaude] Environment variables:"
         foreach ($envVar in $envVars) {
-            Write-Host "  $envVar" -ForegroundColor DarkGray
+            Write-Verbose "  $envVar"
         }
     }
-
-    Write-Host ""
 }

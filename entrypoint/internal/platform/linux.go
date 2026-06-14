@@ -3,7 +3,9 @@
 package platform
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +15,18 @@ import (
 
 	"github.com/jasonmcboyd/dclaude/entrypoint/internal/bootstrap"
 )
+
+// debugWriter receives the output of helper subprocesses (useradd, usermod, ...). It is
+// silenced by default and only surfaces when DCLAUDE_DEBUG is set, mirroring the shell
+// entrypoint's `2>/dev/null` on these commands. On a command failure the captured output is
+// folded into the returned error instead, so real problems are never hidden.
+var debugWriter io.Writer = io.Discard
+
+func init() {
+	if os.Getenv("DCLAUDE_DEBUG") != "" {
+		debugWriter = os.Stderr
+	}
+}
 
 // New returns the Linux bootstrap platform.
 func New() bootstrap.Platform { return linuxPlatform{} }
@@ -198,8 +212,20 @@ func fixHomeOwnership(cfg *bootstrap.Config) {
 
 func run(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
-	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-	return cmd.Run()
+	var buf bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &buf, &buf
+	err := cmd.Run()
+	out := strings.TrimSpace(buf.String())
+	if err != nil {
+		if out != "" {
+			return fmt.Errorf("%s: %w: %s", name, err, out)
+		}
+		return fmt.Errorf("%s: %w", name, err)
+	}
+	if out != "" {
+		_, _ = fmt.Fprintf(debugWriter, "[dclaude] DEBUG: %s: %s\n", name, out)
+	}
+	return nil
 }
 
 func commandSucceeds(name string, args ...string) bool {
