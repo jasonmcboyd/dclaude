@@ -17,7 +17,7 @@ BeforeAll {
     . "$PSScriptRoot/../../Private/Initialize-DockerCliVolume.ps1"
     . "$PSScriptRoot/../../Private/Remove-StaleRuntimeVolumes.ps1"
     . "$PSScriptRoot/../../Private/Update-RuntimeIfOutdated.ps1"
-    . "$PSScriptRoot/../../Private/Test-GoEntrypointEnabled.ps1"
+    . "$PSScriptRoot/../../Private/Get-DClaudeEntrypointBinary.ps1"
     . "$PSScriptRoot/../../Private/Get-DClaudeHostOS.ps1"
     . "$PSScriptRoot/../../Private/Get-ContainerUserProfile.ps1"
     . "$PSScriptRoot/../../Private/Write-LaunchSummary.ps1"
@@ -31,10 +31,20 @@ BeforeAll {
 Describe 'Invoke-DClaude' {
 
     BeforeEach {
-        # Default: Go entrypoint disabled, so the shell-entrypoint launch path is exercised.
-        # Clear the dev-override too, so a dot-sourced dev shell can't leak it into these tests.
-        $env:DCLAUDE_USE_GO_ENTRYPOINT = $null
+        # Clear the dev-override so a dot-sourced dev shell can't leak it into these tests.
         $env:DCLAUDE_ENTRYPOINT_SRC = $null
+
+        # Isolate LOCALAPPDATA: the Windows launch stages the entrypoint binary under
+        # $env:LOCALAPPDATA\dclaude\.bin\<hash>. Redirect it into $TestDrive so tests don't
+        # pollute (or race against) the real LOCALAPPDATA. Saved/restored in AfterEach.
+        $script:savedLocalAppData = $env:LOCALAPPDATA
+        $env:LOCALAPPDATA = $TestDrive
+
+        # The launcher always resolves the Go entrypoint binary via Get-DClaudeEntrypointBinary.
+        # Mock it to a REAL existing file: the Windows path runs Get-FileHash + Copy-Item on it.
+        $script:fakeEntrypoint = Join-Path $TestDrive 'dclaude-entrypoint'
+        Set-Content -Path $script:fakeEntrypoint -Value 'x'
+        Mock Get-DClaudeEntrypointBinary { return $script:fakeEntrypoint }
 
         # Create a workspace directory for -Path
         $script:workDir = Join-Path $TestDrive 'workspace'
@@ -50,6 +60,11 @@ Describe 'Invoke-DClaude' {
 
         # Mock Docker to avoid real daemon calls
         Mock Get-DockerContainerOS { return 'windows' }
+
+        # The Windows launch path always probes the container user profile, which otherwise
+        # shells out to `docker pull` / `docker inspect`. Mock it so it never hits the daemon
+        # (tests that care about the probed value override this with their own return).
+        Mock Get-ContainerUserProfile { return 'C:/Users/ContainerAdministrator' }
 
         # Capture docker args instead of executing
         $script:capturedDockerArgs = $null
@@ -88,6 +103,9 @@ Describe 'Invoke-DClaude' {
     }
 
     AfterEach {
+        # Restore LOCALAPPDATA to avoid leaking the test redirection into other tests.
+        $env:LOCALAPPDATA = $script:savedLocalAppData
+
         # Clean up any test env vars we may have set
         foreach ($key in @('ANTHROPIC_API_KEY', 'CLAUDE_CODE_TEST', 'CLOUD_ML_REGION', 'MY_CUSTOM_VAR')) {
             [Environment]::SetEnvironmentVariable($key, $null)
@@ -714,54 +732,18 @@ Describe 'Invoke-DClaude' {
         }
     }
 
-    Context 'entrypoint override' {
-        It 'mounts entrypoint.sh and sets --entrypoint on Linux' {
+    Context 'Go entrypoint launch' {
+        It 'mounts the host binary and sets --entrypoint on Linux' {
             Mock Get-DockerContainerOS { return 'linux' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*entrypoint.sh:/mnt/dclaude/entrypoint.sh:ro*'
-            $argsString | Should -BeLike '*--entrypoint /bin/sh*'
+            $argsString | Should -BeLike "*$($script:fakeEntrypoint):/mnt/dclaude-bin/dclaude-entrypoint:ro*"
+            $argsString | Should -BeLike '*--entrypoint /mnt/dclaude-bin/dclaude-entrypoint*'
         }
 
-        It 'mounts entrypoint.ps1 from LOCALAPPDATA cache and sets --entrypoint powershell on Windows' {
-            Mock Get-DockerContainerOS { return 'windows' }
-
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
-
-            $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*entrypoint.ps1*'
-            $argsString | Should -BeLike '*--entrypoint powershell*'
-            $argsString | Should -BeLike "*$env:LOCALAPPDATA*\.entrypoints\*"
-        }
-
-        It 'adds -NoProfile -File entrypoint.ps1 after image tag on Windows' {
-            Mock Get-DockerContainerOS { return 'windows' }
-
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
-
-            $imageIdx = [array]::IndexOf($script:capturedDockerArgs, 'test:latest')
-            $noProfileIdx = [array]::IndexOf($script:capturedDockerArgs, '-NoProfile')
-            $noProfileIdx | Should -BeGreaterThan $imageIdx
-        }
-    }
-
-    Context 'Go entrypoint launch (DCLAUDE_USE_GO_ENTRYPOINT)' {
-        It 'invokes the volume binary and skips the shell entrypoint on Linux when enabled' {
-            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
-            Mock Get-DockerContainerOS { return 'linux' }
-
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
-
-            $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*--entrypoint /opt/dclaude-runtime/bin/dclaude-entrypoint*'
-            $argsString | Should -Not -BeLike '*entrypoint.sh*'
-            $argsString | Should -Not -BeLike '*--entrypoint /bin/sh*'
-        }
-
-        It 'emits the Go entrypoint contract env vars when enabled (Linux)' {
-            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
+        It 'emits the Go entrypoint contract env vars (Linux)' {
             Mock Get-DockerContainerOS { return 'linux' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
@@ -773,7 +755,6 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'passes claude args directly after the image (no script path)' {
-            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
             Mock Get-DockerContainerOS { return 'linux' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ClaudeArgs '--resume'
@@ -783,73 +764,28 @@ Describe 'Invoke-DClaude' {
             $resumeIdx | Should -Be ($imageIdx + 1)
         }
 
-        It 'invokes the .exe binary and probes the profile for Windows containers when enabled' {
-            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
+        It 'stages the binary, mounts the cache dir, and probes the profile for Windows containers' {
             Mock Get-DockerContainerOS { return 'windows' }
             Mock Get-ContainerUserProfile { return 'C:/Users/TestUser' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*--entrypoint C:\dclaude-runtime\bin\dclaude-entrypoint.exe*'
-            $argsString | Should -Not -BeLike '*--entrypoint powershell*'
+            $argsString | Should -BeLike '*C:\mnt\dclaude-bin:ro*'
+            $argsString | Should -BeLike '*--entrypoint C:\mnt\dclaude-bin\dclaude-entrypoint.exe*'
+            # The staged binary lives under the (isolated) LOCALAPPDATA cache.
+            $argsString | Should -BeLike "*$env:LOCALAPPDATA*dclaude*.bin*"
             # DCLAUDE_CLAUDE_HOME is derived from the probed profile, not hardcoded.
             $argsString | Should -BeLike '*DCLAUDE_CLAUDE_HOME=C:/Users/TestUser/.claude*'
             Should -Invoke Get-ContainerUserProfile -Times 1
         }
 
-        It 'mounts the host binary and overrides the volume binary when DCLAUDE_ENTRYPOINT_SRC is set (Linux)' {
-            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
-            Mock Get-DockerContainerOS { return 'linux' }
-            $devBin = Join-Path $TestDrive 'dclaude-entrypoint'
-            'binary' | Set-Content $devBin
-
-            $env:DCLAUDE_ENTRYPOINT_SRC = $devBin
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
-
-            $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike "*${devBin}:/mnt/dclaude-bin/dclaude-entrypoint:ro*"
-            $argsString | Should -BeLike '*--entrypoint /mnt/dclaude-bin/dclaude-entrypoint*'
-            # the volume binary is bypassed, not used.
-            $argsString | Should -Not -BeLike '*--entrypoint /opt/dclaude-runtime/bin/dclaude-entrypoint*'
-        }
-
-        It 'mounts the host binary directory and overrides the volume binary when DCLAUDE_ENTRYPOINT_SRC is set (Windows)' {
-            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
-            Mock Get-DockerContainerOS { return 'windows' }
-            Mock Get-ContainerUserProfile { return 'C:/Users/TestUser' }
-            $devBin = Join-Path $TestDrive 'dclaude-entrypoint.exe'
-            'binary' | Set-Content $devBin
-
-            $env:DCLAUDE_ENTRYPOINT_SRC = $devBin
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
-
-            $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike "*$(Split-Path $devBin):C:\mnt\dclaude-bin:ro*"
-            $argsString | Should -BeLike '*--entrypoint C:\mnt\dclaude-bin\dclaude-entrypoint.exe*'
-            $argsString | Should -Not -BeLike '*--entrypoint C:\dclaude-runtime\bin\dclaude-entrypoint.exe*'
-        }
-
-        It 'falls back to the volume binary when DCLAUDE_ENTRYPOINT_SRC points at a missing file' {
-            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
-            Mock Get-DockerContainerOS { return 'linux' }
-
-            $env:DCLAUDE_ENTRYPOINT_SRC = Join-Path $TestDrive 'does-not-exist'
-            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
-
-            $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*--entrypoint /opt/dclaude-runtime/bin/dclaude-entrypoint*'
-            $argsString | Should -Not -BeLike '*/mnt/dclaude-bin/*'
-        }
-
-        It 'does not invoke the binary when the flag is off (default, Linux)' {
-            Mock Get-DockerContainerOS { return 'linux' }
+        It 'returns early when the entrypoint binary cannot be resolved' {
+            Mock Get-DClaudeEntrypointBinary { return $null }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
-            $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -Not -BeLike '*bin/dclaude-entrypoint*'
-            $argsString | Should -BeLike '*entrypoint.sh*'
+            Should -Not -Invoke docker
         }
     }
 

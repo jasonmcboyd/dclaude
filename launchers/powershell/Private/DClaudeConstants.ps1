@@ -18,7 +18,3 @@ $script:DClaudeImages = @{
 # after creation) and read by Get-RuntimeVolumeClaudeVersion. Defined once so the writer
 # and reader cannot drift on the key name.
 $script:DClaudeRuntimeVersionLabel = 'dclaude.cc-version'
-
-# Base URL for downloading the Go entrypoint binary release assets. The asset for module
-# version X is published by CI at <base>/vX/dclaude-entrypoint-{os}-{arch}[.exe].
-$script:DClaudeReleaseBaseUrl = 'https://github.com/jasonmcboyd/dclaude/releases/download'

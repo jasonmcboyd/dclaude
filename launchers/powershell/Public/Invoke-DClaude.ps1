@@ -99,10 +99,6 @@ function Invoke-DClaude {
         return
     }
 
-    # Go entrypoint (roadmap; gated). When enabled, the container runs the binary baked into
-    # the runtime volume instead of the mounted shell entrypoint.
-    $goBinary = Test-GoEntrypointEnabled
-
     # Confirm Docker access before doing any provisioning work
     if ($DockerAccess -and -not $Force) {
         $warning = @(
@@ -202,9 +198,9 @@ When a referenced path does not exist:
 '@ | Set-Content $dclaudeRulesFile -Encoding UTF8
     }
 
-    # For the Windows Go entrypoint, derive the container's profile dir from the image rather
-    # than assuming ContainerAdministrator. Linux needs no probe (fixed claude home).
-    $containerProfile = if ($goBinary -and $containerOS -eq 'windows') {
+    # On Windows, derive the container's profile dir from the image rather than assuming
+    # ContainerAdministrator. Linux needs no probe (fixed claude home).
+    $containerProfile = if ($containerOS -eq 'windows') {
         Get-ContainerUserProfile -Image $imageTag
     } else { $null }
 
@@ -233,19 +229,10 @@ When a referenced path does not exist:
     $runtime = Initialize-RuntimeVolume -ContainerOS $containerOS -Version $moduleVersion
     if (-not $runtime) { return }
 
-    # Resolve the entrypoint script path. The entrypoints directory is a sibling of Public/
-    # in both the repo layout (launchers/powershell/) and the installed module.
-    $entrypointsDir = Join-Path (Split-Path $PSScriptRoot) 'entrypoints'
-
-    # Windows containers: always stage entrypoint.ps1 to a local LOCALAPPDATA cache
-    # before mounting. This guarantees the file has no OneDrive reparse point attributes
-    # that would prevent Hyper-V from bind-mounting it into the container.
-    if ($containerOS -eq 'windows') {
-        $entrypointCache = Join-Path $env:LOCALAPPDATA "dclaude\.entrypoints\v$moduleVersion"
-        New-Item -ItemType Directory -Path $entrypointCache -Force | Out-Null
-        Copy-Item (Join-Path $entrypointsDir 'entrypoint.ps1') $entrypointCache -Force
-        $entrypointsDir = $entrypointCache
-    }
+    # Resolve the Go entrypoint binary (dev override or the module-bundled binary). The runtime
+    # volume carries only Node.js + Claude Code; the binary is mounted in from the host below.
+    $entrypointBin = Get-DClaudeEntrypointBinary -ContainerOS $containerOS
+    if (-not $entrypointBin) { return }
 
     # Build docker run arguments
     $leafName = (Split-Path $resolvedPath -Leaf) -replace '[^a-zA-Z0-9_.-]', '-'
@@ -261,53 +248,30 @@ When a referenced path does not exist:
     $dockerArgs += '-v'
     $dockerArgs += "$($runtime.VolumeName):$($runtime.MountPath):ro"
 
-    # Mount entrypoint script from host and override container's entrypoint.
-    # When the Go entrypoint is enabled, invoke the binary baked into the runtime volume
-    # directly instead of mounting and running the shell entrypoint.
-    if ($goBinary) {
-        # Dev override: when DCLAUDE_ENTRYPOINT_SRC points at a host-built binary, mount it in and
-        # run it directly instead of the volume's binary. This leaves the (immutable, read-only,
-        # revisioned) runtime volume untouched, so a rebuilt binary takes effect on the next launch
-        # without re-provisioning and without disturbing other running instances.
-        $entrypointSrc = $env:DCLAUDE_ENTRYPOINT_SRC
-        if ($entrypointSrc -and (Test-Path $entrypointSrc)) {
-            if ($containerOS -eq 'linux') {
-                $dockerArgs += '-v'
-                $dockerArgs += "${entrypointSrc}:/mnt/dclaude-bin/dclaude-entrypoint:ro"
-                $dockerArgs += '--entrypoint'
-                $dockerArgs += '/mnt/dclaude-bin/dclaude-entrypoint'
-            }
-            else {
-                # Windows can't bind-mount a single file — mount the binary's directory.
-                $dockerArgs += '-v'
-                $dockerArgs += "$(Split-Path $entrypointSrc):C:\mnt\dclaude-bin:ro"
-                $dockerArgs += '--entrypoint'
-                $dockerArgs += "C:\mnt\dclaude-bin\$(Split-Path $entrypointSrc -Leaf)"
-            }
-        }
-        else {
-            $entrypointBin = if ($containerOS -eq 'linux') {
-                "$($runtime.MountPath)/bin/dclaude-entrypoint"
-            } else {
-                "$($runtime.MountPath)\bin\dclaude-entrypoint.exe"
-            }
-            $dockerArgs += '--entrypoint'
-            $dockerArgs += $entrypointBin
-        }
-    }
-    elseif ($containerOS -eq 'linux') {
-        $entrypointHost = Join-Path $entrypointsDir 'entrypoint.sh'
+    # Mount the entrypoint binary from the host and run it directly. The runtime volume carries
+    # only Node.js + Claude Code; the binary is supplied by the module (or the dev override).
+    if ($containerOS -eq 'linux') {
         $dockerArgs += '-v'
-        $dockerArgs += "${entrypointHost}:/mnt/dclaude/entrypoint.sh:ro"
+        $dockerArgs += "${entrypointBin}:/mnt/dclaude-bin/dclaude-entrypoint:ro"
         $dockerArgs += '--entrypoint'
-        $dockerArgs += '/bin/sh'
+        $dockerArgs += '/mnt/dclaude-bin/dclaude-entrypoint'
     }
     else {
-        # Windows containers cannot bind-mount individual files — mount the whole directory.
+        # Windows can't bind-mount a single file, and OneDrive reparse points on the module dir
+        # can block Hyper-V mounts. Stage the binary to a content-hashed local cache (non-OneDrive)
+        # and mount that directory: the same binary reuses its dir (no re-copy, no lock against a
+        # running instance), while a rebuilt dev binary hashes differently and gets a fresh dir.
+        $binHash = (Get-FileHash -Path $entrypointBin -Algorithm SHA256).Hash.Substring(0, 16)
+        $stageDir = Join-Path $env:LOCALAPPDATA "dclaude\.bin\$binHash"
+        $stagedBin = Join-Path $stageDir 'dclaude-entrypoint.exe'
+        if (-not (Test-Path $stagedBin)) {
+            New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+            Copy-Item $entrypointBin $stagedBin -Force
+        }
         $dockerArgs += '-v'
-        $dockerArgs += "${entrypointsDir}:C:\mnt\dclaude:ro"
+        $dockerArgs += "${stageDir}:C:\mnt\dclaude-bin:ro"
         $dockerArgs += '--entrypoint'
-        $dockerArgs += 'powershell'
+        $dockerArgs += 'C:\mnt\dclaude-bin\dclaude-entrypoint.exe'
     }
 
     # Linux: entrypoint drops privileges via setpriv with --no-new-privs.
@@ -387,14 +351,12 @@ When a referenced path does not exist:
     }
 
     # Go entrypoint contract: host-OS seam, the container ~/.claude path, and the contract version.
-    if ($goBinary) {
-        $dockerArgs += '-e'
-        $dockerArgs += "DCLAUDE_HOST_OS=$(Get-DClaudeHostOS)"
-        $dockerArgs += '-e'
-        $dockerArgs += "DCLAUDE_CLAUDE_HOME=$($paths.ClaudeHome)"
-        $dockerArgs += '-e'
-        $dockerArgs += 'DCLAUDE_CONTRACT=1'
-    }
+    $dockerArgs += '-e'
+    $dockerArgs += "DCLAUDE_HOST_OS=$(Get-DClaudeHostOS)"
+    $dockerArgs += '-e'
+    $dockerArgs += "DCLAUDE_CLAUDE_HOME=$($paths.ClaudeHome)"
+    $dockerArgs += '-e'
+    $dockerArgs += 'DCLAUDE_CONTRACT=1'
 
     # Inject env constants from image config
     if ($imageEnv) {
@@ -457,21 +419,8 @@ When a referenced path does not exist:
     # Add image tag
     $dockerArgs += $imageTag
 
-    # Entrypoint script path goes after the image tag (as CMD arguments to the ENTRYPOINT).
-    # The Go binary entrypoint takes claude args directly, so it needs no script path.
-    # Linux: /bin/sh runs the mounted script (Windows bind mounts lose the executable bit)
-    # Windows: powershell runs the mounted script with -NoProfile -File
-    if ($goBinary) {
-        # no CMD prefix — claude args (below) are passed straight to the binary
-    }
-    elseif ($containerOS -eq 'linux') {
-        $dockerArgs += '/mnt/dclaude/entrypoint.sh'
-    }
-    else {
-        $dockerArgs += '-NoProfile'
-        $dockerArgs += '-File'
-        $dockerArgs += 'C:\mnt\dclaude\entrypoint.ps1'
-    }
+    # The Go entrypoint binary takes claude args directly, so no CMD prefix is needed here;
+    # the claude args (below) are passed straight to the binary as the container command.
 
     # Add any extra arguments for claude
     if ($ClaudeArgs -and $ClaudeArgs.Count -gt 0) {

@@ -1,25 +1,26 @@
 <#
 .SYNOPSIS
-    Enable and run the Go container entrypoint from this working tree (dev convenience).
+    Build the Go entrypoint binary from this working tree and run dclaude against it (dev convenience).
 
 .DESCRIPTION
-    Detects the active Docker container mode (Linux or Windows), builds the matching
-    entrypoint binary, points dclaude at it via DCLAUDE_ENTRYPOINT_SRC, turns on
-    DCLAUDE_USE_GO_ENTRYPOINT, and imports the module from this repo. The launcher mounts the
-    host binary directly at run time (see Invoke-DClaude's DCLAUDE_ENTRYPOINT_SRC handling), so a
-    rebuilt binary takes effect on the next launch without touching the (immutable, read-only)
-    runtime volume or disturbing other running instances.
+    Detects the active Docker container mode (Linux or Windows), builds the matching entrypoint
+    binary, points dclaude at it via DCLAUDE_ENTRYPOINT_SRC, and imports the module from this repo.
+    The launcher mounts the host binary directly at run time (see Get-DClaudeEntrypointBinary /
+    Invoke-DClaude), so a rebuilt binary takes effect on the next launch without touching the
+    runtime volume or disturbing other running instances. Without DCLAUDE_ENTRYPOINT_SRC, dclaude
+    uses the binary bundled in the module's bin/ — this script just overrides that with a fresh
+    local build for fast iteration.
 
     Dot-source it to configure your current shell (env vars + alias persist), or run it for a
     one-shot build-configure-launch in this process.
 
 .EXAMPLE
-    . ./launchers/powershell/scripts/enable-go-entrypoint.ps1 -Build
+    . ./launchers/powershell/scripts/use-dev-entrypoint.ps1 -Build
     dclaude
     # Configures this shell (env persists), then you run dclaude yourself.
 
 .EXAMPLE
-    ./launchers/powershell/scripts/enable-go-entrypoint.ps1 -Build
+    ./launchers/powershell/scripts/use-dev-entrypoint.ps1 -Build
     # One-shot: build, configure, and launch dclaude in this process.
 
 .PARAMETER Build
@@ -76,19 +77,18 @@ if ($Build -or -not (Test-Path $binary)) {
         Pop-Location
     }
     Write-Host "[dev] Built $binary" -ForegroundColor Green
-    # No volume swap: the launcher mounts this binary directly via DCLAUDE_ENTRYPOINT_SRC, so the
-    # rebuild takes effect on the next launch with the runtime volume left untouched.
+    # The launcher mounts this binary directly via DCLAUDE_ENTRYPOINT_SRC, so the rebuild takes
+    # effect on the next launch with the runtime volume left untouched.
 }
 
-$env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
 $env:DCLAUDE_ENTRYPOINT_SRC = $binary
 Import-Module $manifest -Force
 
-Write-Host "[dev] Go entrypoint ENABLED ($containerOS, binary: $binary)" -ForegroundColor Green
+Write-Host "[dev] Dev entrypoint binary in use ($containerOS, binary: $binary)" -ForegroundColor Green
 
 if ($dotSourced) {
     Write-Host '[dev] Shell configured. Run:  dclaude' -ForegroundColor Green
-    Write-Host '[dev] To disable:  $env:DCLAUDE_USE_GO_ENTRYPOINT = $null  (or open a new shell)' -ForegroundColor DarkGray
+    Write-Host '[dev] To stop using the dev binary:  $env:DCLAUDE_ENTRYPOINT_SRC = $null  (falls back to the module bin/)' -ForegroundColor DarkGray
 }
 else {
     Write-Warning 'Not dot-sourced: these env vars will not persist after this script exits.'
