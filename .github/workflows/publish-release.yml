@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 jobs:
-  build-entrypoint:
+  release:
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the release and upload the binary assets
@@ -19,20 +19,22 @@ jobs:
         with:
           go-version-file: entrypoint/go.mod
 
-      - name: Vet
+      - name: Vet and test entrypoint
         working-directory: entrypoint
-        run: go vet ./...
+        run: |
+          go vet ./...
+          go test ./...
 
-      - name: Test
-        working-directory: entrypoint
-        run: go test ./...
-
-      - name: Build entrypoint binaries
+      # Build the entrypoint binaries straight into the module's bin/ so they ship inside the
+      # PowerShell module (the launcher mounts them into the container at run time). The same
+      # files are also attached to the GitHub release for direct download.
+      - name: Build entrypoint binaries into the module
         working-directory: entrypoint
         env:
           VERSION: ${{ github.ref_name }}
         run: |
-          mkdir -p dist
+          bin="../launchers/powershell/bin"
+          mkdir -p "$bin"
           for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
             os="${target%/*}"
             arch="${target#*/}"
@@ -40,35 +42,26 @@ jobs:
             if [ "$os" = "windows" ]; then
               ext=".exe"
             fi
-            out="dist/dclaude-entrypoint-${os}-${arch}${ext}"
+            out="$bin/dclaude-entrypoint-${os}-${arch}${ext}"
             echo "building $out"
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
               go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
               -o "$out" .
           done
-          ls -l dist
+          ls -l "$bin"
 
       - name: Attach binaries to the release
         uses: softprops/action-gh-release@v2
         with:
-          files: entrypoint/dist/*
+          files: launchers/powershell/bin/*
 
-  publish:
-    needs: build-entrypoint
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create Module Manifest
+      - name: Create module manifest (bundles bin/)
         shell: pwsh
         env:
           MODULE_VERSION: ${{ github.ref_name }}
         run: ./launchers/powershell/scripts/create-module-manifest.ps1 -Version $env:MODULE_VERSION
 
-      - name: Publish To PowerShell Gallery
+      - name: Publish to PowerShell Gallery
         shell: pwsh
         env:
           NUGET_API_KEY: ${{ secrets.POWERSHELL_GALLERY_API_KEY }}

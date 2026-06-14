@@ -24,7 +24,15 @@ New-Item -ItemType Directory -Path $publishDir -Force | Out-Null
 Copy-Item -Path (Join-Path $moduleRoot 'Public') -Destination $publishDir -Recurse -Force
 Copy-Item -Path (Join-Path $moduleRoot 'Private') -Destination $publishDir -Recurse -Force
 Copy-Item -Path (Join-Path $moduleRoot 'dclaude.psm1') -Destination $publishDir -Force
-Copy-Item -Path (Join-Path $moduleRoot 'entrypoints') -Destination $publishDir -Recurse -Force
+
+# Bundle the Go entrypoint binaries (built into bin/ before packaging — by CI or the local
+# deploy-test harness). They are mounted into the container at launch, so the module is
+# non-functional without them: fail loudly rather than ship a broken package.
+$binDir = Join-Path $moduleRoot 'bin'
+if (-not (Test-Path $binDir) -or -not (Get-ChildItem -Path $binDir -File -ErrorAction SilentlyContinue)) {
+    throw "Entrypoint binaries not found in '$binDir'. Build them before packaging (CI build step, or scripts/test-package-deploy.ps1)."
+}
+Copy-Item -Path $binDir -Destination $publishDir -Recurse -Force
 
 # Build New-ModuleManifest parameters
 $manifestParams = @{
