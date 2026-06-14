@@ -67,13 +67,15 @@ if ($Build -or -not (Test-Path $binary)) {
     Write-Host "[dev] Building $containerOS/amd64 entrypoint binary..." -ForegroundColor Cyan
     Push-Location $entrypointDir
     try {
+        # CGO_ENABLED=0 so the dev binary is statically linked, matching the CI/production build.
         $env:GOOS = $containerOS
         $env:GOARCH = 'amd64'
+        $env:CGO_ENABLED = '0'
         go build -trimpath -ldflags '-s -w -X main.version=dev' -o $binary .
         if ($LASTEXITCODE -ne 0) { throw 'go build failed.' }
     }
     finally {
-        Remove-Item Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
+        Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED -ErrorAction SilentlyContinue
         Pop-Location
     }
     Write-Host "[dev] Built $binary" -ForegroundColor Green

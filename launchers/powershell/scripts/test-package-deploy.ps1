@@ -55,14 +55,15 @@ try {
         $os = $parts[0]; $arch = $parts[1]
         $ext = if ($os -eq 'windows') { '.exe' } else { '' }
         $out = Join-Path $binDir "dclaude-entrypoint-$os-$arch$ext"
-        $env:GOOS = $os; $env:GOARCH = $arch
+        # CGO_ENABLED=0 to match CI exactly: a static binary, so the gate tests what ships.
+        $env:GOOS = $os; $env:GOARCH = $arch; $env:CGO_ENABLED = '0'
         Write-Host "[pkg] building $out" -ForegroundColor DarkGray
         go build -trimpath -ldflags "-s -w -X main.version=$tag" -o $out .
         if ($LASTEXITCODE -ne 0) { throw "go build failed for $t" }
     }
 }
 finally {
-    Remove-Item Env:GOOS, Env:GOARCH -ErrorAction SilentlyContinue
+    Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED -ErrorAction SilentlyContinue
     Pop-Location
 }
 

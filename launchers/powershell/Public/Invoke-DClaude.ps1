@@ -266,7 +266,11 @@ When a referenced path does not exist:
         $stagedBin = Join-Path $stageDir 'dclaude-entrypoint.exe'
         if (-not (Test-Path $stagedBin)) {
             New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
-            Copy-Item $entrypointBin $stagedBin -Force
+            # Copy to a temp name then rename into place (atomic on NTFS), so an interrupted copy
+            # can't leave a truncated binary that the hash-keyed Test-Path would trust forever.
+            $tmpBin = "$stagedBin.$PID.tmp"
+            Copy-Item $entrypointBin $tmpBin -Force
+            Move-Item $tmpBin $stagedBin -Force
         }
         $dockerArgs += '-v'
         $dockerArgs += "${stageDir}:C:\mnt\dclaude-bin:ro"

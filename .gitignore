@@ -37,5 +37,8 @@ settings.local.json
 /entrypoint/dclaude-entrypoint
 /entrypoint/dclaude-entrypoint.exe
 
+# Bundled Go entrypoint binaries (built by CI / scripts/test-package-deploy.ps1, never committed)
+/launchers/powershell/bin/
+
 # PowerShell publish output
 /publish/

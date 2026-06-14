@@ -61,6 +61,15 @@ jobs:
           MODULE_VERSION: ${{ github.ref_name }}
         run: ./launchers/powershell/scripts/create-module-manifest.ps1 -Version $env:MODULE_VERSION
 
+      - name: Validate packaged module
+        shell: pwsh
+        run: |
+          $m = Test-ModuleManifest ./publish/dclaude/dclaude.psd1
+          Import-Module ./publish/dclaude/dclaude.psd1 -Force
+          $bins = Get-ChildItem ./publish/dclaude/bin -File
+          Write-Host "manifest OK: v$($m.Version), $((Get-Command -Module dclaude).Count) commands, $($bins.Count) bundled binaries"
+          if ($bins.Count -lt 4) { throw "expected 4 bundled binaries, found $($bins.Count)" }
+
       - name: Publish to PowerShell Gallery
         shell: pwsh
         env:
