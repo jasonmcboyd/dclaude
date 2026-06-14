@@ -19,11 +19,26 @@ function Test-RuntimeVolumePopulated {
         [string]$VolumeName
     )
 
+    # When the Go entrypoint is enabled the volume must also carry the entrypoint binary,
+    # otherwise an older or partial volume would be treated as usable. The default (flag off)
+    # path is unchanged.
+    $goEnabled = Test-GoEntrypointEnabled
+
     if ($ContainerOS -eq 'linux') {
-        docker run --rm -v "${VolumeName}:/check" $script:DClaudeImages.ProvisionLinux test -f /check/node/bin/node 2>$null
+        if ($goEnabled) {
+            docker run --rm -v "${VolumeName}:/check" $script:DClaudeImages.ProvisionLinux sh -c 'test -f /check/node/bin/node && test -x /check/bin/dclaude-entrypoint' 2>$null
+        }
+        else {
+            docker run --rm -v "${VolumeName}:/check" $script:DClaudeImages.ProvisionLinux test -f /check/node/bin/node 2>$null
+        }
     }
     else {
-        docker run --rm -v "${VolumeName}:C:\check" $script:DClaudeImages.ProvisionWindows cmd /c "if exist C:\check\node\node.exe (exit 0) else (exit 1)" 2>$null
+        $check = if ($goEnabled) {
+            'if exist C:\check\node\node.exe (if exist C:\check\bin\dclaude-entrypoint.exe (exit 0) else (exit 1)) else (exit 1)'
+        } else {
+            'if exist C:\check\node\node.exe (exit 0) else (exit 1)'
+        }
+        docker run --rm -v "${VolumeName}:C:\check" $script:DClaudeImages.ProvisionWindows cmd /c $check 2>$null
     }
 
     return $LASTEXITCODE -eq 0

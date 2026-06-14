@@ -1,11 +1,14 @@
 BeforeAll {
     . "$PSScriptRoot/../../src/Private/DClaudeConstants.ps1"
+    . "$PSScriptRoot/../../src/Private/Test-GoEntrypointEnabled.ps1"
     . "$PSScriptRoot/../../src/Private/New-RuntimeVolume.ps1"
 
     function docker { }
     # Get-LatestClaudeCodeVersion is called by New-RuntimeVolume when -ClaudeCodeVersion is
     # omitted; stub it so it can be mocked even though it isn't dot-sourced here.
     function Get-LatestClaudeCodeVersion { }
+    # Get-DClaudeModuleVersion is only called on the Go-entrypoint download path; stub it.
+    function Get-DClaudeModuleVersion { }
 
     # Returns the joined string of the 'docker run' call (skips the 'docker volume create' call).
     function Get-RunCall {
@@ -27,6 +30,9 @@ BeforeAll {
 Describe 'New-RuntimeVolume' {
 
     BeforeEach {
+        # Keep the default path deterministic: Go entrypoint disabled unless a test opts in.
+        $env:DCLAUDE_USE_GO_ENTRYPOINT = $null
+        $env:DCLAUDE_ENTRYPOINT_SRC = $null
         $script:dockerCalls = @()
         Mock docker {
             $script:dockerCalls += , @($args)
@@ -237,6 +243,60 @@ Describe 'New-RuntimeVolume' {
 
             New-RuntimeVolume -ContainerOS 'linux' -VolumeName 'v' -ClaudeCodeVersion '1.2.3' | Should -BeFalse
             $script:checkSeen | Should -BeFalse
+        }
+    }
+
+    Context 'Go entrypoint provisioning (DCLAUDE_USE_GO_ENTRYPOINT)' {
+        It 'does not touch the entrypoint binary when disabled (default)' {
+            New-RuntimeVolume -ContainerOS 'linux' -VolumeName 'v' -ClaudeCodeVersion '1.2.3' | Out-Null
+            (Get-RunCall) | Should -Not -BeLike '*dclaude-entrypoint*'
+        }
+
+        It 'downloads the release binary for the module version when enabled (Linux)' {
+            Mock Test-GoEntrypointEnabled { $true }
+            Mock Get-DClaudeModuleVersion { [version]'0.17.0' }
+
+            New-RuntimeVolume -ContainerOS 'linux' -VolumeName 'v' -ClaudeCodeVersion '1.2.3' | Out-Null
+
+            $run = Get-RunCall
+            $run | Should -BeLike '*releases/download/v0.17.0/dclaude-entrypoint-linux-*'
+            $run | Should -BeLike '*-o /out/bin/dclaude-entrypoint*'
+            $run | Should -BeLike '*chmod +x /out/bin/dclaude-entrypoint*'
+        }
+
+        It 'downloads the windows release binary before applying icacls (Windows)' {
+            Mock Test-GoEntrypointEnabled { $true }
+            Mock Get-DClaudeModuleVersion { [version]'0.17.0' }
+
+            New-RuntimeVolume -ContainerOS 'windows' -VolumeName 'v' -ClaudeCodeVersion '1.2.3' | Out-Null
+
+            $run = Get-RunCall
+            $run | Should -BeLike '*releases/download/v0.17.0/dclaude-entrypoint-windows-amd64.exe*'
+            # The download must precede the icacls grant so the bin dir inherits it.
+            $dl = $run.IndexOf('dclaude-entrypoint.exe')
+            $icacls = $run.IndexOf('icacls')
+            $dl | Should -BeLessThan $icacls
+        }
+
+        It 'injects a locally built binary via docker cp instead of downloading (Linux)' {
+            Mock Test-GoEntrypointEnabled { $true }
+            $env:DCLAUDE_ENTRYPOINT_SRC = 'C:\build\dclaude-entrypoint'
+
+            New-RuntimeVolume -ContainerOS 'linux' -VolumeName 'v' -ClaudeCodeVersion '1.2.3' | Out-Null
+
+            $run = Get-RunCall
+            $run | Should -BeLike '*C:\build\dclaude-entrypoint:/in/dclaude-entrypoint:ro*'
+            $run | Should -BeLike '*cp /in/dclaude-entrypoint /out/bin/dclaude-entrypoint*'
+            $run | Should -Not -BeLike '*releases/download*'
+        }
+
+        It 'does not resolve the module version on the local-source path' {
+            Mock Test-GoEntrypointEnabled { $true }
+            Mock Get-DClaudeModuleVersion { throw 'should not be called' }
+            $env:DCLAUDE_ENTRYPOINT_SRC = 'C:\build\dclaude-entrypoint'
+
+            { New-RuntimeVolume -ContainerOS 'linux' -VolumeName 'v' -ClaudeCodeVersion '1.2.3' } | Should -Not -Throw
+            Should -Not -Invoke Get-DClaudeModuleVersion
         }
     }
 }

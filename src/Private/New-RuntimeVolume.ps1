@@ -59,6 +59,14 @@ function New-RuntimeVolume {
         '@anthropic-ai/claude-code'
     }
 
+    # Go entrypoint (roadmap phases 1-5, gated; default off keeps provisioning unchanged).
+    # When enabled, also bake the entrypoint binary into the volume — either copied from a
+    # locally built binary (DCLAUDE_ENTRYPOINT_SRC, for development) or downloaded from the
+    # release assets for this module version.
+    $goEnabled = Test-GoEntrypointEnabled
+    $entrypointSrc = $env:DCLAUDE_ENTRYPOINT_SRC
+    $entrypointVersion = if ($goEnabled -and -not $entrypointSrc) { "$(Get-DClaudeModuleVersion)" } else { '' }
+
     # Pre-create the volume with the version label when we have a concrete version. Labels are
     # immutable after creation, so this must happen before the provisioning 'docker run'.
     if ($resolvedVersion) {
@@ -73,10 +81,21 @@ function New-RuntimeVolume {
 
     if ($ContainerOS -eq 'linux') {
         $provisionImage = $script:DClaudeImages.ProvisionLinux
-        $script = ('set -e && apt-get update -qq && apt-get install -y -qq curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x86_64) NODE_ARCH=x64;; aarch64) NODE_ARCH=arm64;; armv7l) NODE_ARCH=armv7l;; *) echo "Unsupported: $ARCH" && exit 1;; esac && mkdir -p /out/node && curl -fsSL "https://nodejs.org/dist/v__NODE__/node-v__NODE__-linux-${NODE_ARCH}.tar.gz" | tar -xz --strip-components=1 -C /out/node && export PATH="/out/node/bin:$PATH" && npm install -g __CLAUDE__ --prefix /out/node && apt-get install -y -qq git >/dev/null 2>&1 && mkdir -p /out/git/bin /out/git/libexec && cp -a /usr/bin/git* /out/git/bin/ && cp -a /usr/lib/git-core /out/git/libexec/').Replace('__NODE__', $nodeVersion).Replace('__CLAUDE__', $claudePackage)
+        $binSegment = ''
+        if ($goEnabled) {
+            $binSegment = if ($entrypointSrc) {
+                ' && mkdir -p /out/bin && cp /in/dclaude-entrypoint /out/bin/dclaude-entrypoint && chmod +x /out/bin/dclaude-entrypoint'
+            } else {
+                ' && case "$NODE_ARCH" in x64) GO_ARCH=amd64;; *) GO_ARCH="$NODE_ARCH";; esac && mkdir -p /out/bin && curl -fsSL "__REL__/v__VER__/dclaude-entrypoint-linux-${GO_ARCH}" -o /out/bin/dclaude-entrypoint && chmod +x /out/bin/dclaude-entrypoint'
+            }
+        }
+        $script = ('set -e && apt-get update -qq && apt-get install -y -qq curl >/dev/null 2>&1 && ARCH=$(uname -m) && case "$ARCH" in x86_64) NODE_ARCH=x64;; aarch64) NODE_ARCH=arm64;; armv7l) NODE_ARCH=armv7l;; *) echo "Unsupported: $ARCH" && exit 1;; esac && mkdir -p /out/node && curl -fsSL "https://nodejs.org/dist/v__NODE__/node-v__NODE__-linux-${NODE_ARCH}.tar.gz" | tar -xz --strip-components=1 -C /out/node && export PATH="/out/node/bin:$PATH" && npm install -g __CLAUDE__ --prefix /out/node && apt-get install -y -qq git >/dev/null 2>&1 && mkdir -p /out/git/bin /out/git/libexec && cp -a /usr/bin/git* /out/git/bin/ && cp -a /usr/lib/git-core /out/git/libexec/' + $binSegment).Replace('__NODE__', $nodeVersion).Replace('__CLAUDE__', $claudePackage).Replace('__REL__', $script:DClaudeReleaseBaseUrl).Replace('__VER__', $entrypointVersion)
+        $runArgs = @('run', '--rm', '-v', "${VolumeName}:/out")
+        if ($goEnabled -and $entrypointSrc) { $runArgs += @('-v', "${entrypointSrc}:/in/dclaude-entrypoint:ro") }
+        $runArgs += @($provisionImage, 'sh', '-c', $script)
         Write-Verbose "dclaude: provisioning image: $provisionImage"
         Write-Verbose "dclaude: provisioning script: $script"
-        docker run --rm -v "${VolumeName}:/out" $provisionImage sh -c $script | Out-Host
+        docker @runArgs | Out-Host
     }
     else {
         # Use servercore (not nanoserver) for provisioning so the volume is created and
@@ -87,10 +106,22 @@ function New-RuntimeVolume {
         $minGitVersion = $script:DClaudeVersions.MinGit
         $minGitTag = "v$minGitVersion"
         $minGitFile = "MinGit-$($minGitVersion.Replace('.windows.', '.'))-64-bit.zip"
-        $script = ('cd C:\out && curl -sLo node.zip https://nodejs.org/dist/v__NODE__/node-v__NODE__-win-x64.zip && tar -xf node.zip && ren node-v__NODE__-win-x64 node && del node.zip && curl -sLo mingit.zip https://github.com/git-for-windows/git/releases/download/__MINGIT_TAG__/__MINGIT_FILE__ && mkdir mingit && tar -xf mingit.zip -C mingit && del mingit.zip && set PATH=C:\out\node;%PATH% && C:\out\node\npm install -g __CLAUDE__ --prefix C:\out\node && icacls C:\out /grant Everyone:(OI)(CI)F /t /q').Replace('__NODE__', $nodeVersion).Replace('__MINGIT_TAG__', $minGitTag).Replace('__MINGIT_FILE__', $minGitFile).Replace('__CLAUDE__', $claudePackage)
+        $binSegment = ''
+        if ($goEnabled) {
+            $binSegment = if ($entrypointSrc) {
+                ' && mkdir C:\out\bin && copy /Y C:\in\dclaude-entrypoint.exe C:\out\bin\dclaude-entrypoint.exe'
+            } else {
+                ' && mkdir C:\out\bin && curl -sLo C:\out\bin\dclaude-entrypoint.exe __REL__/v__VER__/dclaude-entrypoint-windows-amd64.exe'
+            }
+        }
+        # The binary segment is inserted BEFORE icacls so the new bin dir inherits the grant.
+        $script = ('cd C:\out && curl -sLo node.zip https://nodejs.org/dist/v__NODE__/node-v__NODE__-win-x64.zip && tar -xf node.zip && ren node-v__NODE__-win-x64 node && del node.zip && curl -sLo mingit.zip https://github.com/git-for-windows/git/releases/download/__MINGIT_TAG__/__MINGIT_FILE__ && mkdir mingit && tar -xf mingit.zip -C mingit && del mingit.zip && set PATH=C:\out\node;%PATH% && C:\out\node\npm install -g __CLAUDE__ --prefix C:\out\node' + $binSegment + ' && icacls C:\out /grant Everyone:(OI)(CI)F /t /q').Replace('__NODE__', $nodeVersion).Replace('__MINGIT_TAG__', $minGitTag).Replace('__MINGIT_FILE__', $minGitFile).Replace('__CLAUDE__', $claudePackage).Replace('__REL__', $script:DClaudeReleaseBaseUrl).Replace('__VER__', $entrypointVersion)
+        $runArgs = @('run', '--rm', '-v', "${VolumeName}:C:\out")
+        if ($goEnabled -and $entrypointSrc) { $runArgs += @('-v', "${entrypointSrc}:C:\in\dclaude-entrypoint.exe:ro") }
+        $runArgs += @($provisionImage, 'cmd', '/c', $script)
         Write-Verbose "dclaude: provisioning image: $provisionImage"
         Write-Verbose "dclaude: provisioning script: $script"
-        docker run --rm -v "${VolumeName}:C:\out" $provisionImage cmd /c $script | Out-Host
+        docker @runArgs | Out-Host
     }
 
     if ($LASTEXITCODE -eq 0) { return $true }
@@ -99,7 +130,12 @@ function New-RuntimeVolume {
     # (windowsfilter driver issue) and return non-zero even when the provisioning
     # script itself succeeded. Verify the volume is actually populated before failing.
     if ($ContainerOS -eq 'windows') {
-        docker run --rm -v "${VolumeName}:C:\check" $script:DClaudeImages.ProvisionWindows cmd /c "if exist C:\check\node\node.exe (exit 0) else (exit 1)" 2>$null
+        $verify = if ($goEnabled) {
+            'if exist C:\check\node\node.exe (if exist C:\check\bin\dclaude-entrypoint.exe (exit 0) else (exit 1)) else (exit 1)'
+        } else {
+            'if exist C:\check\node\node.exe (exit 0) else (exit 1)'
+        }
+        docker run --rm -v "${VolumeName}:C:\check" $script:DClaudeImages.ProvisionWindows cmd /c $verify 2>$null
         if ($LASTEXITCODE -eq 0) {
             Write-Verbose 'dclaude: provisioning exit code was non-zero (Docker --rm VHD cleanup issue) but volume is populated — continuing'
             return $true
