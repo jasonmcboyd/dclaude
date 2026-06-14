@@ -31,3 +31,8 @@ settings.local.json
 # Temp
 *.tmp
 *.log
+
+# Go build output
+/dist/
+/cmd/dclaude-entrypoint/dclaude-entrypoint
+/cmd/dclaude-entrypoint/dclaude-entrypoint.exe
