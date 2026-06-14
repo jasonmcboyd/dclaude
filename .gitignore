@@ -33,6 +33,9 @@ settings.local.json
 *.log
 
 # Go build output
-/dist/
-/cmd/dclaude-entrypoint/dclaude-entrypoint
-/cmd/dclaude-entrypoint/dclaude-entrypoint.exe
+/entrypoint/dist/
+/entrypoint/dclaude-entrypoint
+/entrypoint/dclaude-entrypoint.exe
+
+# PowerShell publish output
+/publish/

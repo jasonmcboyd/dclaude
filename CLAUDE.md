@@ -4,31 +4,43 @@ PowerShell module that runs Claude Code inside Docker containers, providing a se
 
 ## Project Structure
 
+The repo is organized by component: a language-agnostic container **entrypoint** (Go) that
+every launcher targets, and **launchers** (host-side thin clients) that drive `docker run`.
+PowerShell is the first launcher; a bash launcher is the planned next peer.
+
 ```
-src/
-  dclaude.psm1          # Module loader (dot-sources Private/ and Public/, registers alias)
-  dclaude.psd1          # Module manifest
-  Public/               # 13 exported functions
-  Private/              # 12 internal helper functions
-Entrypoints/
-  entrypoint.ps1        # Windows container init (mounted at runtime, not baked into images)
-  entrypoint.sh         # Linux container init (mounted at runtime, not baked into images)
-tests/
-  Public/               # Pester 5 tests mirroring src/Public/
-  Private/              # Pester 5 tests mirroring src/Private/
-scripts/
-  create-module-manifest.ps1  # CI: generate manifest for PSGallery publish
-.github/
-  workflows/
-    publish-release.yml # CI/CD: publish to PSGallery on version tag push (v*)
+entrypoint/                     # Go: the in-container bootstrap binary (shipped in the runtime volume)
+  go.mod                        #   module github.com/jasonmcboyd/dclaude/entrypoint
+  main.go                       #   forwards args to claude; dispatches by GOOS
+  internal/
+    bootstrap/                  #   env contract, logging, orchestration, Platform interface
+    sanitize/                   #   the single .claude.json transform (+ tests)
+    initd/                      #   ordered init-script discovery (+ tests)
+    platform/                   #   linux.go (full) + windows.go (stub) — Go tests live beside source
+launchers/
+  powershell/                   # the PowerShell launcher (PSGallery artifact: dclaude)
+    dclaude.psm1                #   module loader (dot-sources Private/ and Public/)
+    dclaude.psd1                #   module manifest
+    Public/                     #   exported functions
+    Private/                    #   internal helper functions
+    tests/                      #   Pester 5 tests mirroring Public/ and Private/
+    scripts/                    #   create-module-manifest.ps1 (CI manifest gen), reset-dev-environment.ps1
+    entrypoints/                #   legacy shell entrypoints (entrypoint.ps1/.sh) — removed at Go cutover
+docs/architecture/             # platform-bootstrap.md, go-entrypoint-design.md
+.github/workflows/
+  publish-release.yml          # CI/CD: build Go binaries + publish module to PSGallery on tag (v*)
 ```
 
 ## Testing
 
 ```powershell
-# Run tests (requires Pester 5)
+# PowerShell launcher (Pester 5)
 Import-Module Pester -MinimumVersion 5.0
-Invoke-Pester -Path ./tests -Output Detailed
+Invoke-Pester -Path ./launchers/powershell/tests -Output Detailed
+```
+```bash
+# Go entrypoint (from the entrypoint/ module root)
+cd entrypoint && go test ./...
 ```
 
 No build step is required. The module uses stock Docker images (e.g. `python:3.12-slim`,

@@ -17,15 +17,18 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: entrypoint/go.mod
 
       - name: Vet
+        working-directory: entrypoint
         run: go vet ./...
 
       - name: Test
+        working-directory: entrypoint
         run: go test ./...
 
       - name: Build entrypoint binaries
+        working-directory: entrypoint
         env:
           VERSION: ${{ github.ref_name }}
         run: |
@@ -41,14 +44,14 @@ jobs:
             echo "building $out"
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
               go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
-              -o "$out" ./cmd/dclaude-entrypoint
+              -o "$out" .
           done
           ls -l dist
 
       - name: Attach binaries to the release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
+          files: entrypoint/dist/*
 
   publish:
     needs: build-entrypoint
@@ -63,7 +66,7 @@ jobs:
         shell: pwsh
         env:
           MODULE_VERSION: ${{ github.ref_name }}
-        run: ./scripts/create-module-manifest.ps1 -Version $env:MODULE_VERSION
+        run: ./launchers/powershell/scripts/create-module-manifest.ps1 -Version $env:MODULE_VERSION
 
       - name: Publish To PowerShell Gallery
         shell: pwsh
