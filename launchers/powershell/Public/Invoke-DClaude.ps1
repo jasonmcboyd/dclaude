@@ -265,13 +265,35 @@ When a referenced path does not exist:
     # When the Go entrypoint is enabled, invoke the binary baked into the runtime volume
     # directly instead of mounting and running the shell entrypoint.
     if ($goBinary) {
-        $entrypointBin = if ($containerOS -eq 'linux') {
-            "$($runtime.MountPath)/bin/dclaude-entrypoint"
-        } else {
-            "$($runtime.MountPath)\bin\dclaude-entrypoint.exe"
+        # Dev override: when DCLAUDE_ENTRYPOINT_SRC points at a host-built binary, mount it in and
+        # run it directly instead of the volume's binary. This leaves the (immutable, read-only,
+        # revisioned) runtime volume untouched, so a rebuilt binary takes effect on the next launch
+        # without re-provisioning and without disturbing other running instances.
+        $entrypointSrc = $env:DCLAUDE_ENTRYPOINT_SRC
+        if ($entrypointSrc -and (Test-Path $entrypointSrc)) {
+            if ($containerOS -eq 'linux') {
+                $dockerArgs += '-v'
+                $dockerArgs += "${entrypointSrc}:/mnt/dclaude-bin/dclaude-entrypoint:ro"
+                $dockerArgs += '--entrypoint'
+                $dockerArgs += '/mnt/dclaude-bin/dclaude-entrypoint'
+            }
+            else {
+                # Windows can't bind-mount a single file — mount the binary's directory.
+                $dockerArgs += '-v'
+                $dockerArgs += "$(Split-Path $entrypointSrc):C:\mnt\dclaude-bin:ro"
+                $dockerArgs += '--entrypoint'
+                $dockerArgs += "C:\mnt\dclaude-bin\$(Split-Path $entrypointSrc -Leaf)"
+            }
         }
-        $dockerArgs += '--entrypoint'
-        $dockerArgs += $entrypointBin
+        else {
+            $entrypointBin = if ($containerOS -eq 'linux') {
+                "$($runtime.MountPath)/bin/dclaude-entrypoint"
+            } else {
+                "$($runtime.MountPath)\bin\dclaude-entrypoint.exe"
+            }
+            $dockerArgs += '--entrypoint'
+            $dockerArgs += $entrypointBin
+        }
     }
     elseif ($containerOS -eq 'linux') {
         $entrypointHost = Join-Path $entrypointsDir 'entrypoint.sh'
