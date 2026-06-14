@@ -82,6 +82,7 @@ function Resolve-ContainerPaths {
 
     return [PSCustomObject]@{
         Workspace  = $workspace
+        ClaudeHome = $claudeHome
         DockerArgs = $dockerArgs
         Errors     = $errors
     }

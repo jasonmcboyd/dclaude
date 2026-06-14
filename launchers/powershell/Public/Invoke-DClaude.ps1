@@ -251,8 +251,17 @@ When a referenced path does not exist:
     $dockerArgs += '-v'
     $dockerArgs += "$($runtime.VolumeName):$($runtime.MountPath):ro"
 
+    # Go entrypoint (roadmap phase 4, gated; Linux only until Windows parity lands in phase 5).
+    # When enabled, invoke the binary baked into the runtime volume directly instead of mounting
+    # and running the shell entrypoint.
+    $goBinary = (Test-GoEntrypointEnabled) -and ($containerOS -eq 'linux')
+
     # Mount entrypoint script from host and override container's entrypoint
-    if ($containerOS -eq 'linux') {
+    if ($goBinary) {
+        $dockerArgs += '--entrypoint'
+        $dockerArgs += "$($runtime.MountPath)/bin/dclaude-entrypoint"
+    }
+    elseif ($containerOS -eq 'linux') {
         $entrypointHost = Join-Path $entrypointsDir 'entrypoint.sh'
         $dockerArgs += '-v'
         $dockerArgs += "${entrypointHost}:/mnt/dclaude/entrypoint.sh:ro"
@@ -339,6 +348,16 @@ When a referenced path does not exist:
         $dockerArgs += 'DCLAUDE_VERBOSE=1'
     }
 
+    # Go entrypoint contract: host-OS seam, the container ~/.claude path, and the contract version.
+    if ($goBinary) {
+        $dockerArgs += '-e'
+        $dockerArgs += "DCLAUDE_HOST_OS=$(Get-DClaudeHostOS)"
+        $dockerArgs += '-e'
+        $dockerArgs += "DCLAUDE_CLAUDE_HOME=$($paths.ClaudeHome)"
+        $dockerArgs += '-e'
+        $dockerArgs += 'DCLAUDE_CONTRACT=1'
+    }
+
     # Inject env constants from image config
     if ($imageEnv) {
         foreach ($prop in $imageEnv.PSObject.Properties) {
@@ -400,10 +419,14 @@ When a referenced path does not exist:
     # Add image tag
     $dockerArgs += $imageTag
 
-    # Entrypoint script path goes after the image tag (as CMD arguments to the ENTRYPOINT)
+    # Entrypoint script path goes after the image tag (as CMD arguments to the ENTRYPOINT).
+    # The Go binary entrypoint takes claude args directly, so it needs no script path.
     # Linux: /bin/sh runs the mounted script (Windows bind mounts lose the executable bit)
     # Windows: powershell runs the mounted script with -NoProfile -File
-    if ($containerOS -eq 'linux') {
+    if ($goBinary) {
+        # no CMD prefix — claude args (below) are passed straight to the binary
+    }
+    elseif ($containerOS -eq 'linux') {
         $dockerArgs += '/mnt/dclaude/entrypoint.sh'
     }
     else {

@@ -17,6 +17,8 @@ BeforeAll {
     . "$PSScriptRoot/../../Private/Initialize-DockerCliVolume.ps1"
     . "$PSScriptRoot/../../Private/Remove-StaleRuntimeVolumes.ps1"
     . "$PSScriptRoot/../../Private/Update-RuntimeIfOutdated.ps1"
+    . "$PSScriptRoot/../../Private/Test-GoEntrypointEnabled.ps1"
+    . "$PSScriptRoot/../../Private/Get-DClaudeHostOS.ps1"
     . "$PSScriptRoot/../../Private/Write-LaunchSummary.ps1"
     . "$PSScriptRoot/../../Public/Invoke-DClaude.ps1"
 
@@ -28,6 +30,9 @@ BeforeAll {
 Describe 'Invoke-DClaude' {
 
     BeforeEach {
+        # Default: Go entrypoint disabled, so the shell-entrypoint launch path is exercised.
+        $env:DCLAUDE_USE_GO_ENTRYPOINT = $null
+
         # Create a workspace directory for -Path
         $script:workDir = Join-Path $TestDrive 'workspace'
         New-Item -Path $script:workDir -ItemType Directory -Force | Out-Null
@@ -720,6 +725,64 @@ Describe 'Invoke-DClaude' {
             $imageIdx = [array]::IndexOf($script:capturedDockerArgs, 'test:latest')
             $noProfileIdx = [array]::IndexOf($script:capturedDockerArgs, '-NoProfile')
             $noProfileIdx | Should -BeGreaterThan $imageIdx
+        }
+    }
+
+    Context 'Go entrypoint launch (DCLAUDE_USE_GO_ENTRYPOINT)' {
+        It 'invokes the volume binary and skips the shell entrypoint on Linux when enabled' {
+            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*--entrypoint /opt/dclaude-runtime/bin/dclaude-entrypoint*'
+            $argsString | Should -Not -BeLike '*entrypoint.sh*'
+            $argsString | Should -Not -BeLike '*--entrypoint /bin/sh*'
+        }
+
+        It 'emits the Go entrypoint contract env vars when enabled (Linux)' {
+            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*DCLAUDE_HOST_OS=*'
+            $argsString | Should -BeLike '*DCLAUDE_CLAUDE_HOME=/home/claude/.claude*'
+            $argsString | Should -BeLike '*DCLAUDE_CONTRACT=1*'
+        }
+
+        It 'passes claude args directly after the image (no script path)' {
+            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir -ClaudeArgs '--resume'
+
+            $imageIdx = [array]::IndexOf($script:capturedDockerArgs, 'test:latest')
+            $resumeIdx = [array]::IndexOf($script:capturedDockerArgs, '--resume')
+            $resumeIdx | Should -Be ($imageIdx + 1)
+        }
+
+        It 'still uses the shell entrypoint for Windows containers (Go path is Linux-only in phase 4)' {
+            $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
+            Mock Get-DockerContainerOS { return 'windows' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -BeLike '*--entrypoint powershell*'
+            $argsString | Should -Not -BeLike '*dclaude-entrypoint*'
+        }
+
+        It 'does not invoke the binary when the flag is off (default, Linux)' {
+            Mock Get-DockerContainerOS { return 'linux' }
+
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            $argsString = $script:capturedDockerArgs -join ' '
+            $argsString | Should -Not -BeLike '*bin/dclaude-entrypoint*'
+            $argsString | Should -BeLike '*entrypoint.sh*'
         }
     }
 
