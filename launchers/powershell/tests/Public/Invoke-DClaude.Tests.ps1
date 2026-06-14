@@ -19,6 +19,7 @@ BeforeAll {
     . "$PSScriptRoot/../../Private/Update-RuntimeIfOutdated.ps1"
     . "$PSScriptRoot/../../Private/Test-GoEntrypointEnabled.ps1"
     . "$PSScriptRoot/../../Private/Get-DClaudeHostOS.ps1"
+    . "$PSScriptRoot/../../Private/Get-ContainerUserProfile.ps1"
     . "$PSScriptRoot/../../Private/Write-LaunchSummary.ps1"
     . "$PSScriptRoot/../../Public/Invoke-DClaude.ps1"
 
@@ -764,15 +765,19 @@ Describe 'Invoke-DClaude' {
             $resumeIdx | Should -Be ($imageIdx + 1)
         }
 
-        It 'still uses the shell entrypoint for Windows containers (Go path is Linux-only in phase 4)' {
+        It 'invokes the .exe binary and probes the profile for Windows containers when enabled' {
             $env:DCLAUDE_USE_GO_ENTRYPOINT = '1'
             Mock Get-DockerContainerOS { return 'windows' }
+            Mock Get-ContainerUserProfile { return 'C:/Users/TestUser' }
 
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
-            $argsString | Should -BeLike '*--entrypoint powershell*'
-            $argsString | Should -Not -BeLike '*dclaude-entrypoint*'
+            $argsString | Should -BeLike '*--entrypoint C:\dclaude-runtime\bin\dclaude-entrypoint.exe*'
+            $argsString | Should -Not -BeLike '*--entrypoint powershell*'
+            # DCLAUDE_CLAUDE_HOME is derived from the probed profile, not hardcoded.
+            $argsString | Should -BeLike '*DCLAUDE_CLAUDE_HOME=C:/Users/TestUser/.claude*'
+            Should -Invoke Get-ContainerUserProfile -Times 1
         }
 
         It 'does not invoke the binary when the flag is off (default, Linux)' {

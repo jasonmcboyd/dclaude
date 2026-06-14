@@ -13,6 +13,22 @@ Describe 'Resolve-ContainerPaths' {
         '{}' | Set-Content $script:claudeJson
     }
 
+    Context 'container user profile (Windows)' {
+        It 'defaults the claude home to the ContainerAdministrator profile' {
+            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
+
+            $result = Resolve-ContainerPaths -ContainerOS 'windows' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir
+            $result.ClaudeHome | Should -Be 'C:/Users/ContainerAdministrator/.claude'
+        }
+
+        It 'uses the provided profile for the claude home and project dir mount' {
+            Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }
+
+            $result = Resolve-ContainerPaths -ContainerOS 'windows' -ResolvedPath $TestDrive -ClaudeConfigPath $script:claudeDir -ContainerUserProfile 'C:/Users/Custom'
+            $result.ClaudeHome | Should -Be 'C:/Users/Custom/.claude'
+        }
+    }
+
     Context 'container path selection' {
         It 'converts the resolved path via ConvertTo-ContainerPath for the workspace' {
             Mock Get-Item { [PSCustomObject]@{ Target = 'something' } } -ParameterFilter { $Path -like '*.claude.json' }

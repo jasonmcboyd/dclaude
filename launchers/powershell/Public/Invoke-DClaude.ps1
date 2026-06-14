@@ -99,6 +99,10 @@ function Invoke-DClaude {
         return
     }
 
+    # Go entrypoint (roadmap; gated). When enabled, the container runs the binary baked into
+    # the runtime volume instead of the mounted shell entrypoint.
+    $goBinary = Test-GoEntrypointEnabled
+
     # Confirm Docker access before doing any provisioning work
     if ($DockerAccess -and -not $Force) {
         $warning = @(
@@ -198,8 +202,14 @@ When a referenced path does not exist:
 '@ | Set-Content $dclaudeRulesFile -Encoding UTF8
     }
 
+    # For the Windows Go entrypoint, derive the container's profile dir from the image rather
+    # than assuming ContainerAdministrator. Linux needs no probe (fixed claude home).
+    $containerProfile = if ($goBinary -and $containerOS -eq 'windows') {
+        Get-ContainerUserProfile -Image $imageTag
+    } else { $null }
+
     # Resolve container paths and platform-specific mounts
-    $paths = Resolve-ContainerPaths -ContainerOS $containerOS -ResolvedPath $resolvedPath -ClaudeConfigPath $ClaudeConfigPath
+    $paths = Resolve-ContainerPaths -ContainerOS $containerOS -ResolvedPath $resolvedPath -ClaudeConfigPath $ClaudeConfigPath -ContainerUserProfile $containerProfile
     if ($paths.Errors.Count -gt 0) {
         foreach ($err in $paths.Errors) {
             Write-Error $err
@@ -251,15 +261,17 @@ When a referenced path does not exist:
     $dockerArgs += '-v'
     $dockerArgs += "$($runtime.VolumeName):$($runtime.MountPath):ro"
 
-    # Go entrypoint (roadmap phase 4, gated; Linux only until Windows parity lands in phase 5).
-    # When enabled, invoke the binary baked into the runtime volume directly instead of mounting
-    # and running the shell entrypoint.
-    $goBinary = (Test-GoEntrypointEnabled) -and ($containerOS -eq 'linux')
-
-    # Mount entrypoint script from host and override container's entrypoint
+    # Mount entrypoint script from host and override container's entrypoint.
+    # When the Go entrypoint is enabled, invoke the binary baked into the runtime volume
+    # directly instead of mounting and running the shell entrypoint.
     if ($goBinary) {
+        $entrypointBin = if ($containerOS -eq 'linux') {
+            "$($runtime.MountPath)/bin/dclaude-entrypoint"
+        } else {
+            "$($runtime.MountPath)\bin\dclaude-entrypoint.exe"
+        }
         $dockerArgs += '--entrypoint'
-        $dockerArgs += "$($runtime.MountPath)/bin/dclaude-entrypoint"
+        $dockerArgs += $entrypointBin
     }
     elseif ($containerOS -eq 'linux') {
         $entrypointHost = Join-Path $entrypointsDir 'entrypoint.sh'

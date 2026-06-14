@@ -9,7 +9,13 @@ function Resolve-ContainerPaths {
         [string]$ResolvedPath,
 
         [Parameter(Mandatory)]
-        [string]$ClaudeConfigPath
+        [string]$ClaudeConfigPath,
+
+        # Windows only: the container's default-user profile dir (forward-slash form), from
+        # Get-ContainerUserProfile. When omitted, falls back to the ContainerAdministrator
+        # profile, preserving the prior hardcoded behavior.
+        [Parameter()]
+        [string]$ContainerUserProfile
     )
 
     $errors = @()
@@ -22,7 +28,8 @@ function Resolve-ContainerPaths {
     # Mount ~/.claude directly at the container's ~/.claude so all reads/writes
     # go straight to the host filesystem. No staging path or symlinks needed.
     if ($ContainerOS -eq 'windows') {
-        $claudeHome = 'C:/Users/ContainerAdministrator/.claude'
+        $profileDir = if ($ContainerUserProfile) { $ContainerUserProfile } else { 'C:/Users/ContainerAdministrator' }
+        $claudeHome = "$profileDir/.claude"
     }
     else {
         $claudeHome = '/home/claude/.claude'
@@ -70,12 +77,7 @@ function Resolve-ContainerPaths {
     if (Test-Path $hostProjectDir) {
         # The container project key is derived from the container-side workspace path
         $containerKey = $workspace -replace '[/\\:]', '-'
-        if ($ContainerOS -eq 'windows') {
-            $containerProjectDir = "C:/Users/ContainerAdministrator/.claude/projects/$containerKey"
-        }
-        else {
-            $containerProjectDir = "/home/claude/.claude/projects/$containerKey"
-        }
+        $containerProjectDir = "$claudeHome/projects/$containerKey"
         $dockerArgs += '-v'
         $dockerArgs += "${hostProjectDir}:${containerProjectDir}"
     }
