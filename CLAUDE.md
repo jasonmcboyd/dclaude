@@ -195,6 +195,23 @@ Every bug fix or feature must be verified against **all three runtime scenarios*
 
 Parity is enforced by a single Go codebase: shared bootstrap logic in `internal/bootstrap/`, with platform-specific behavior isolated in `internal/platform/linux.go` and `internal/platform/windows.go` (build-tagged). The launcher (`Invoke-DClaude.ps1`) also branches on `$containerOS` for path translation and mount construction. When changing bootstrap behavior, check whether the change requires a platform-specific implementation in one or both of the `platform/` files.
 
+## Releasing
+
+Releases are **tag-driven**: pushing a tag matching `v*` triggers `publish-release.yml`, which
+builds the four os/arch Go binaries into the module, validates the manifest, attaches the binaries
+to a GitHub release, and publishes the module to PSGallery. There is **no branch trigger** — a tag
+can point at any commit on any branch, so a prerelease can be cut from a feature branch without
+merging to `master`.
+
+- **Stable:** tag `vMAJOR.MINOR.PATCH` (e.g. `v0.17.0`), normally on `master`.
+- **Prerelease (alpha/beta/rc):** tag with a dot-free suffix, e.g. `v0.17.0-alpha1`, `-beta2`,
+  `-rc1`. `create-module-manifest.ps1` splits the suffix into the PSGallery `Prerelease` label, and
+  the GitHub release is auto-marked prerelease (kept out of "Latest").
+- Consumers opt into prereleases with `Install-Module dclaude -AllowPrerelease`; plain installs only
+  ever get stable, and `Update-Module` moves prerelease users up to the next stable. PSGallery
+  versions are immutable and prerelease labels sort lexically, so use fresh, dot-free, sortable
+  labels (`-alpha1`, `-alpha2`, …; zero-pad if you'll cut many).
+
 ## Conventions
 
 - Functions use standard PowerShell `Verb-Noun` naming with `DClaude` noun prefix

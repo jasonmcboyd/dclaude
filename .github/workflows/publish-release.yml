@@ -54,6 +54,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: launchers/powershell/bin/*
+          # A hyphenated tag (e.g. v0.17.0-alpha1) is a prerelease: mark the GitHub release so it
+          # isn't shown as "Latest". Stable tags (v0.17.0) publish normally.
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
       - name: Create module manifest (bundles bin/)
         shell: pwsh
