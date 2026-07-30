@@ -113,7 +113,10 @@ function Resolve-DClaudeConfig {
                     }
                 }
             }
-            elseif ($name -eq 'volumes') {
+            elseif ($name -eq 'volumes' -or $name -eq 'commonVolumes') {
+                if ($name -eq 'commonVolumes') {
+                    Write-Warning "Config at $($src.Directory) uses deprecated 'commonVolumes'. Rename to 'volumes'."
+                }
                 if ($prop.Value -is [PSCustomObject]) {
                     foreach ($platform in @('linux', 'windows')) {
                         if ($prop.Value.PSObject.Properties[$platform]) {
