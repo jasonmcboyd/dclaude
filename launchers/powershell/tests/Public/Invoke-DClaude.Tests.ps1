@@ -22,6 +22,7 @@ BeforeAll {
     . "$PSScriptRoot/../../Private/Get-DClaudeHostOS.ps1"
     . "$PSScriptRoot/../../Private/Get-ContainerUserProfile.ps1"
     . "$PSScriptRoot/../../Private/Write-LaunchSummary.ps1"
+    . "$PSScriptRoot/../../Public/Resolve-DClaudeConfig.ps1"
     . "$PSScriptRoot/../../Public/Invoke-DClaude.ps1"
 
     # Define a docker function so Pester can mock it
@@ -73,8 +74,8 @@ Describe 'Invoke-DClaude' {
             $script:capturedDockerArgs = $args
         }
 
-        # Suppress project config from leaking in from the real filesystem
-        Mock Get-DClaudeConfig { return $null }
+        # Suppress config from leaking in from the real filesystem
+        Mock Resolve-DClaudeConfig { return $null }
 
         # Mock module-version resolution so naming/paths are deterministic in tests
         Mock Get-DClaudeModuleVersion { return [version]'0.6.4' }
@@ -154,8 +155,12 @@ Describe 'Invoke-DClaude' {
 
     Context 'image resolution from project config' {
         It 'resolves defaultImageKey from project config' {
-            Mock Get-DClaudeConfig {
-                return [PSCustomObject]@{ defaultImageKey = 'pwsh' }
+            Mock Resolve-DClaudeConfig {
+                return [PSCustomObject]@{
+                    defaultImageKey = 'pwsh'
+                    envPassthrough  = @()
+                    volumes         = [PSCustomObject]@{ linux = @(); windows = @() }
+                }
             }
             Mock Resolve-ImageKey {
                 return [PSCustomObject]@{ tag = 'dclaude-pwsh:latest'; volumes = @() }
@@ -168,8 +173,12 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'falls back to deprecated imageKey from project config' {
-            Mock Get-DClaudeConfig {
-                return [PSCustomObject]@{ imageKey = 'pwsh' }
+            Mock Resolve-DClaudeConfig {
+                return [PSCustomObject]@{
+                    defaultImageKey = 'pwsh'
+                    envPassthrough  = @()
+                    volumes         = [PSCustomObject]@{ linux = @(); windows = @() }
+                }
             }
             Mock Resolve-ImageKey {
                 return [PSCustomObject]@{ tag = 'dclaude-pwsh:latest'; volumes = @() }
@@ -182,8 +191,13 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'falls back to deprecated image from project config' {
-            Mock Get-DClaudeConfig {
-                return [PSCustomObject]@{ image = 'project-image:v2' }
+            Mock Resolve-DClaudeConfig {
+                return [PSCustomObject]@{
+                    defaultImageKey = $null
+                    envPassthrough  = @()
+                    volumes         = [PSCustomObject]@{ linux = @(); windows = @() }
+                    image           = 'project-image:v2'
+                }
             }
 
             Invoke-DClaude -Path $script:workDir -ClaudeConfigPath $script:claudeDir 3>$null
@@ -195,10 +209,11 @@ Describe 'Invoke-DClaude' {
 
     Context 'defaultImageKey takes precedence over deprecated properties in project config' {
         It 'uses defaultImageKey and ignores deprecated imageKey' {
-            Mock Get-DClaudeConfig {
+            Mock Resolve-DClaudeConfig {
                 return [PSCustomObject]@{
                     defaultImageKey = 'primary'
-                    imageKey        = 'fallback'
+                    envPassthrough  = @()
+                    volumes         = [PSCustomObject]@{ linux = @(); windows = @() }
                 }
             }
             Mock Resolve-ImageKey {
@@ -214,14 +229,11 @@ Describe 'Invoke-DClaude' {
 
     Context 'image resolution from defaultImageKey in user config' {
         It 'falls back to defaultImageKey when no image specified' {
-            Mock Get-DClaudeUserConfig {
+            Mock Resolve-DClaudeConfig {
                 return [PSCustomObject]@{
                     defaultImageKey = 'pwsh'
-                    images = [PSCustomObject]@{
-                        pwsh = [PSCustomObject]@{
-                            windows = [PSCustomObject]@{ tag = 'dclaude-pwsh:latest' }
-                        }
-                    }
+                    envPassthrough  = @()
+                    volumes         = [PSCustomObject]@{ linux = @(); windows = @() }
                 }
             }
             Mock Resolve-ImageKey {
@@ -326,13 +338,10 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'merges image-level and project-level volumes' {
-            # Isolate from the real ~/.dclaude user config so its volumes don't leak in.
-            Mock Get-DClaudeUserConfig { return $null }
-            # Use the platform-keyed object format the product supports (see CLAUDE.md).
-            # The container OS here is 'windows' (default Get-DockerContainerOS mock).
-            Mock Get-DClaudeConfig {
+            Mock Resolve-DClaudeConfig {
                 return [PSCustomObject]@{
                     defaultImageKey = 'pwsh'
+                    envPassthrough  = @()
                     volumes         = [PSCustomObject]@{
                         windows = @('C:/proj-vol:C:/proj-mount:rw')
                         linux   = @()
@@ -436,9 +445,6 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'does not set DCLAUDE_VOLUMES when there are no additional volumes' {
-            # Isolate from the real ~/.dclaude user config so its volumes don't leak in.
-            Mock Get-DClaudeUserConfig { return $null }
-
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             $argsString = $script:capturedDockerArgs -join ' '
@@ -534,8 +540,12 @@ Describe 'Invoke-DClaude' {
         }
 
         It 'emits only one error when defaultImageKey from project config resolve fails' {
-            Mock Get-DClaudeConfig {
-                return [PSCustomObject]@{ defaultImageKey = 'missing' }
+            Mock Resolve-DClaudeConfig {
+                return [PSCustomObject]@{
+                    defaultImageKey = 'missing'
+                    envPassthrough  = @()
+                    volumes         = [PSCustomObject]@{ linux = @(); windows = @() }
+                }
             }
             Mock Resolve-ImageKey {
                 Write-Error "Image key 'missing' not found"

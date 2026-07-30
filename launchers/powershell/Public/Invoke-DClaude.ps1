@@ -118,8 +118,8 @@ function Invoke-DClaude {
     }
     $resolvedPath = (Resolve-Path -Path $Path).Path
 
-    # Load project config
-    $config = Get-DClaudeConfig -Path $resolvedPath
+    # Resolve effective config (walks all ancestor .dclaude dirs + user config)
+    $config = Resolve-DClaudeConfig -Path $resolvedPath -Quiet
 
     # Determine image tag, image-level volumes, env passthrough patterns, and env constants
     $imageTag = $null
@@ -139,26 +139,14 @@ function Invoke-DClaude {
         }
         'Default' {
             Write-Debug '[image] No -Image or -ImageKey parameter; checking config'
-            if ($config -and $config.PSObject.Properties['defaultImageKey']) {
-                Write-Debug "[image] Project config defaultImageKey = '$($config.defaultImageKey)'"
+            if ($config -and $config.defaultImageKey) {
+                Write-Debug "[image] Resolved config defaultImageKey = '$($config.defaultImageKey)'"
                 $imageKeyToResolve = $config.defaultImageKey
             }
-            elseif ($config -and $config.PSObject.Properties['imageKey']) {
-                Write-Warning "Project config uses deprecated 'imageKey'. Rename to 'defaultImageKey'."
-                $imageKeyToResolve = $config.imageKey
-            }
             elseif ($config -and $config.PSObject.Properties['image']) {
-                Write-Warning "Project config uses deprecated 'image'. Use 'defaultImageKey' instead, or pass -Image to Invoke-DClaude."
+                Write-Warning "Config uses deprecated 'image'. Use 'defaultImageKey' instead, or pass -Image to Invoke-DClaude."
                 $imageTag = $config.image
             }
-        }
-    }
-
-    if (-not $imageTag -and -not $imageKeyToResolve) {
-        $uc = Get-DClaudeUserConfig
-        if ($uc -and $uc.PSObject.Properties['defaultImageKey']) {
-            Write-Debug "[image] User config defaultImageKey = '$($uc.defaultImageKey)'"
-            $imageKeyToResolve = $uc.defaultImageKey
         }
     }
 
@@ -291,43 +279,19 @@ When a referenced path does not exist:
     # Append platform-specific mount args (claude config, .claude.json, project dir)
     $dockerArgs += $paths.DockerArgs
 
-    # Append volume mounts from user config, image config, and project config
-    $userConfig = Get-DClaudeUserConfig
-    $userVolumes = @()
-    $userVolumeProp = if ($userConfig -and $userConfig.PSObject.Properties['volumes']) {
-        $userConfig.volumes
-    } elseif ($userConfig -and $userConfig.PSObject.Properties['commonVolumes']) {
-        Write-Warning "User config uses deprecated 'commonVolumes'. Rename to 'volumes'."
-        $userConfig.commonVolumes
-    } else { $null }
-    if ($userVolumeProp) {
-        if ($userVolumeProp -is [array]) {
-            $userVolumes = @($userVolumeProp)
-        } elseif ($userVolumeProp -is [PSCustomObject] -and $userVolumeProp.PSObject.Properties[$containerOS]) {
-            $userVolumes = @($userVolumeProp.$containerOS)
-        }
+    # Append volume mounts from composed config (user + project) and image config
+    $composedVolumes = @()
+    if ($config -and $config.PSObject.Properties['volumes'] -and $config.volumes.PSObject.Properties[$containerOS]) {
+        $composedVolumes = @($config.volumes.$containerOS)
     }
-    $projectVolumeProp = if ($config -and $config.PSObject.Properties['volumes']) { $config.volumes } else { $null }
-    $projectVolumes = @()
-    if ($projectVolumeProp) {
-        if ($projectVolumeProp -is [PSCustomObject] -and $projectVolumeProp.PSObject.Properties[$containerOS]) {
-            $projectVolumes = @($projectVolumeProp.$containerOS)
-        } elseif ($projectVolumeProp -is [array]) {
-            Write-Warning "Project config uses flat array for 'volumes'. Use platform-keyed object format: { `"windows`": [...], `"linux`": [...] }"
-            $projectVolumes = @($projectVolumeProp)
-        }
-    }
-    $volumeArgs = Get-VolumeArgs -UserVolumes $userVolumes -ImageVolumes $imageVolumes -ProjectVolumes $projectVolumes -ContainerOS $containerOS
+    $volumeArgs = Get-VolumeArgs -ProjectVolumes $composedVolumes -ImageVolumes $imageVolumes -ContainerOS $containerOS
     $dockerArgs += $volumeArgs
 
-    # Append environment variable passthrough (global + image-level + project-level patterns)
-    $globalEnvPassthrough = if ($userConfig -and $userConfig.PSObject.Properties['envPassthrough']) {
-        @($userConfig.envPassthrough)
-    } else { @() }
-    $projectEnvPassthrough = if ($config -and $config.PSObject.Properties['envPassthrough']) {
+    # Append environment variable passthrough (composed config + image-level patterns)
+    $composedEnvPassthrough = if ($config -and $config.PSObject.Properties['envPassthrough']) {
         @($config.envPassthrough)
     } else { @() }
-    $envPatterns = $globalEnvPassthrough + $imageEnvPassthrough + $projectEnvPassthrough
+    $envPatterns = $imageEnvPassthrough + $composedEnvPassthrough
     $envPassthroughResult = Get-EnvironmentPassthroughArgs -HostPath $resolvedPath -Patterns $envPatterns
     $dockerArgs += $envPassthroughResult
 

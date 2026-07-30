@@ -2,7 +2,6 @@ BeforeAll {
     . "$PSScriptRoot/../../Private/Read-SettingsFile.ps1"
     . "$PSScriptRoot/../../Private/Test-DClaudeSettingsSchema.ps1"
     . "$PSScriptRoot/../../Private/Merge-SettingsFiles.ps1"
-    . "$PSScriptRoot/../../Private/Get-VolumeContainerPath.ps1"
     . "$PSScriptRoot/../../Private/Get-DClaudeConfig.ps1"
 }
 
@@ -42,8 +41,8 @@ Describe 'Get-DClaudeConfig' {
     }
 
     Context 'when .dclaude folders exist at multiple levels' {
-        It 'uses the closest scalar value (closest wins)' {
-            $rootDir = Join-Path $TestDrive 'multi-scalar'
+        It 'returns only the nearest config' {
+            $rootDir = Join-Path $TestDrive 'multi-nearest'
             $childDir = Join-Path $rootDir 'packages/app'
             New-Item -Path $childDir -ItemType Directory -Force | Out-Null
 
@@ -59,178 +58,7 @@ Describe 'Get-DClaudeConfig' {
 
             $result = Get-DClaudeConfig -Path $childDir
             $result.defaultImageKey | Should -Be 'child-image'
-        }
-
-        It 'inherits scalars from parent when child does not define them' {
-            $rootDir = Join-Path $TestDrive 'multi-inherit'
-            $childDir = Join-Path $rootDir 'packages/app'
-            New-Item -Path $childDir -ItemType Directory -Force | Out-Null
-
-            $rootConfig = Join-Path $rootDir '.dclaude'
-            New-Item -Path $rootConfig -ItemType Directory -Force | Out-Null
-            @{ defaultImageKey = 'parent-image' } | ConvertTo-Json |
-                Set-Content (Join-Path $rootConfig 'settings.json')
-
-            $childConfig = Join-Path $childDir '.dclaude'
-            New-Item -Path $childConfig -ItemType Directory -Force | Out-Null
-            @{ envPassthrough = @('CHILD_VAR') } | ConvertTo-Json |
-                Set-Content (Join-Path $childConfig 'settings.json')
-
-            $result = Get-DClaudeConfig -Path $childDir
-            $result.defaultImageKey | Should -Be 'parent-image'
-        }
-
-        It 'merges envPassthrough additively across levels' {
-            $rootDir = Join-Path $TestDrive 'multi-env'
-            $childDir = Join-Path $rootDir 'packages/app'
-            New-Item -Path $childDir -ItemType Directory -Force | Out-Null
-
-            $rootConfig = Join-Path $rootDir '.dclaude'
-            New-Item -Path $rootConfig -ItemType Directory -Force | Out-Null
-            @{ envPassthrough = @('ROOT_VAR') } | ConvertTo-Json |
-                Set-Content (Join-Path $rootConfig 'settings.json')
-
-            $childConfig = Join-Path $childDir '.dclaude'
-            New-Item -Path $childConfig -ItemType Directory -Force | Out-Null
-            @{ envPassthrough = @('CHILD_VAR') } | ConvertTo-Json |
-                Set-Content (Join-Path $childConfig 'settings.json')
-
-            $result = Get-DClaudeConfig -Path $childDir
-            $result.envPassthrough | Should -Contain 'CHILD_VAR'
-            $result.envPassthrough | Should -Contain 'ROOT_VAR'
-            $result.envPassthrough.Count | Should -Be 2
-        }
-
-        It 'merges volumes additively per platform' {
-            $rootDir = Join-Path $TestDrive 'multi-vol'
-            $childDir = Join-Path $rootDir 'packages/app'
-            New-Item -Path $childDir -ItemType Directory -Force | Out-Null
-
-            $rootConfig = Join-Path $rootDir '.dclaude'
-            New-Item -Path $rootConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/host/root:/container/root:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $rootConfig 'settings.json')
-
-            $childConfig = Join-Path $childDir '.dclaude'
-            New-Item -Path $childConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/host/child:/container/child:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $childConfig 'settings.json')
-
-            $result = Get-DClaudeConfig -Path $childDir
-            $result.volumes.linux | Should -Contain '/host/child:/container/child:ro'
-            $result.volumes.linux | Should -Contain '/host/root:/container/root:ro'
-            $result.volumes.linux.Count | Should -Be 2
-        }
-
-        It 'merges volumes when only the parent defines a platform' {
-            $rootDir = Join-Path $TestDrive 'multi-vol-plat'
-            $childDir = Join-Path $rootDir 'packages/app'
-            New-Item -Path $childDir -ItemType Directory -Force | Out-Null
-
-            $rootConfig = Join-Path $rootDir '.dclaude'
-            New-Item -Path $rootConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/root-vol:/mnt:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $rootConfig 'settings.json')
-
-            $childConfig = Join-Path $childDir '.dclaude'
-            New-Item -Path $childConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ windows = @('C:\child:C:\mnt:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $childConfig 'settings.json')
-
-            $result = Get-DClaudeConfig -Path $childDir
-            $result.volumes.linux | Should -Contain '/root-vol:/mnt:ro'
-            $result.volumes.windows | Should -Contain 'C:\child:C:\mnt:ro'
-        }
-
-        It 'composes three levels correctly' {
-            $grandparentDir = Join-Path $TestDrive 'multi-three'
-            $parentDir = Join-Path $grandparentDir 'parent'
-            $childDir = Join-Path $parentDir 'child'
-            New-Item -Path $childDir -ItemType Directory -Force | Out-Null
-
-            $gpConfig = Join-Path $grandparentDir '.dclaude'
-            New-Item -Path $gpConfig -ItemType Directory -Force | Out-Null
-            @{ defaultImageKey = 'gp-image'; envPassthrough = @('GP_VAR') } | ConvertTo-Json |
-                Set-Content (Join-Path $gpConfig 'settings.json')
-
-            $pConfig = Join-Path $parentDir '.dclaude'
-            New-Item -Path $pConfig -ItemType Directory -Force | Out-Null
-            @{ envPassthrough = @('PARENT_VAR') } | ConvertTo-Json |
-                Set-Content (Join-Path $pConfig 'settings.json')
-
-            $cConfig = Join-Path $childDir '.dclaude'
-            New-Item -Path $cConfig -ItemType Directory -Force | Out-Null
-            @{ defaultImageKey = 'child-image'; envPassthrough = @('CHILD_VAR') } | ConvertTo-Json |
-                Set-Content (Join-Path $cConfig 'settings.json')
-
-            $result = Get-DClaudeConfig -Path $childDir
-            $result.defaultImageKey | Should -Be 'child-image'
-            $result.envPassthrough | Should -Contain 'CHILD_VAR'
-            $result.envPassthrough | Should -Contain 'PARENT_VAR'
-            $result.envPassthrough | Should -Contain 'GP_VAR'
-            $result.envPassthrough.Count | Should -Be 3
-        }
-
-        It 'deduplicates exact duplicate volume specs' {
-            $rootDir = Join-Path $TestDrive 'vol-dedup'
-            $childDir = Join-Path $rootDir 'child'
-            New-Item -Path $childDir -ItemType Directory -Force | Out-Null
-
-            $rootConfig = Join-Path $rootDir '.dclaude'
-            New-Item -Path $rootConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/host/a:/mnt/a:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $rootConfig 'settings.json')
-
-            $childConfig = Join-Path $childDir '.dclaude'
-            New-Item -Path $childConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/host/a:/mnt/a:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $childConfig 'settings.json')
-
-            $result = Get-DClaudeConfig -Path $childDir
-            $result.volumes.linux | Should -Contain '/host/a:/mnt/a:ro'
-            $result.volumes.linux.Count | Should -Be 1
-        }
-
-        It 'keeps closest volume when container paths conflict' {
-            $rootDir = Join-Path $TestDrive 'vol-conflict'
-            $childDir = Join-Path $rootDir 'child'
-            New-Item -Path $childDir -ItemType Directory -Force | Out-Null
-
-            $rootConfig = Join-Path $rootDir '.dclaude'
-            New-Item -Path $rootConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/host/parent:/mnt/data:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $rootConfig 'settings.json')
-
-            $childConfig = Join-Path $childDir '.dclaude'
-            New-Item -Path $childConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/host/child:/mnt/data:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $childConfig 'settings.json')
-
-            $result = Get-DClaudeConfig -Path $childDir
-            $result.volumes.linux | Should -Contain '/host/child:/mnt/data:ro'
-            $result.volumes.linux | Should -Not -Contain '/host/parent:/mnt/data:ro'
-            $result.volumes.linux.Count | Should -Be 1
-        }
-
-        It 'keeps both volumes when same source maps to different container paths' {
-            $rootDir = Join-Path $TestDrive 'vol-diff-dest'
-            $childDir = Join-Path $rootDir 'child'
-            New-Item -Path $childDir -ItemType Directory -Force | Out-Null
-
-            $rootConfig = Join-Path $rootDir '.dclaude'
-            New-Item -Path $rootConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/host/a:/mnt/b:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $rootConfig 'settings.json')
-
-            $childConfig = Join-Path $childDir '.dclaude'
-            New-Item -Path $childConfig -ItemType Directory -Force | Out-Null
-            @{ volumes = @{ linux = @('/host/a:/mnt/a:ro') } } | ConvertTo-Json -Depth 3 |
-                Set-Content (Join-Path $childConfig 'settings.json')
-
-            $result = Get-DClaudeConfig -Path $childDir
-            $result.volumes.linux | Should -Contain '/host/a:/mnt/a:ro'
-            $result.volumes.linux | Should -Contain '/host/a:/mnt/b:ro'
-            $result.volumes.linux.Count | Should -Be 2
+            $result.PSObject.Properties.Name | Should -Not -Contain 'envPassthrough'
         }
     }
 

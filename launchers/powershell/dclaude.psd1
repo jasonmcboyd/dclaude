@@ -37,6 +37,7 @@
         'Remove-DClaudeEnvPassthrough'
         'Remove-DClaudeImage'
         'Remove-DClaudeVolume'
+        'Resolve-DClaudeConfig'
         'Set-DClaudeDefaultImageKey'
         'Update-DClaudeRuntime'
     )
