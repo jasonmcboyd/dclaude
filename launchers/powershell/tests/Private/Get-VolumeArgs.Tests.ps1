@@ -1,6 +1,7 @@
 BeforeAll {
     . "$PSScriptRoot/../../Private/ConvertTo-ContainerPath.ps1"
     . "$PSScriptRoot/../../Private/Set-VolumeDefaultMode.ps1"
+    . "$PSScriptRoot/../../Private/Get-VolumeContainerPath.ps1"
     . "$PSScriptRoot/../../Private/Get-VolumeArgs.ps1"
 }
 
@@ -114,6 +115,37 @@ Describe 'Get-VolumeArgs' {
         It 'does not include DCLAUDE_VOLUMES when no volumes provided' {
             $result = Get-VolumeArgs -ContainerOS windows
             $result -join ' ' | Should -Not -BeLike '*DCLAUDE_VOLUMES*'
+        }
+    }
+
+    Context 'volume dedup and conflict resolution' {
+        It 'deduplicates exact duplicate specs across sources' {
+            $result = Get-VolumeArgs -UserVolumes @('/host/a:/mnt/a:ro') -ProjectVolumes @('/host/a:/mnt/a:ro') -ContainerOS linux
+            $argsString = $result -join ' '
+            $count = ([regex]::Matches($argsString, '-v /host/a:/mnt/a:ro')).Count
+            $count | Should -Be 1
+        }
+
+        It 'project volume overrides user volume on container path conflict' {
+            $result = Get-VolumeArgs -UserVolumes @('/user/data:/mnt:ro') -ProjectVolumes @('/proj/data:/mnt:ro') -ContainerOS linux
+            $argsString = $result -join ' '
+            $argsString | Should -BeLike '*-v /proj/data:/mnt:ro*'
+            $argsString | Should -Not -BeLike '*-v /user/data:/mnt:ro*'
+        }
+
+        It 'project overrides image which overrides user on same container path' {
+            $result = Get-VolumeArgs -UserVolumes @('/user/x:/mnt:ro') -ImageVolumes @('/img/x:/mnt:ro') -ProjectVolumes @('/proj/x:/mnt:rw') -ContainerOS linux
+            $argsString = $result -join ' '
+            $argsString | Should -BeLike '*-v /proj/x:/mnt:rw*'
+            $argsString | Should -Not -BeLike '*-v /user/x:/mnt:ro*'
+            $argsString | Should -Not -BeLike '*-v /img/x:/mnt:ro*'
+        }
+
+        It 'keeps volumes with different container paths' {
+            $result = Get-VolumeArgs -UserVolumes @('/host/a:/mnt/a:ro') -ProjectVolumes @('/host/a:/mnt/b:ro') -ContainerOS linux
+            $argsString = $result -join ' '
+            $argsString | Should -BeLike '*-v /host/a:/mnt/a:ro*'
+            $argsString | Should -BeLike '*-v /host/a:/mnt/b:ro*'
         }
     }
 

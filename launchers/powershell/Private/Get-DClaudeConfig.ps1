@@ -42,7 +42,28 @@ function Get-DClaudeConfig {
                     foreach ($platform in $prop.Value.PSObject.Properties) {
                         $pk = $platform.Name
                         if ($result.$name.PSObject.Properties[$pk]) {
-                            $result.$name.$pk = @($result.$name.$pk) + @($platform.Value)
+                            $existing = @($result.$name.$pk)
+                            $existingSpecs = [System.Collections.Generic.HashSet[string]]::new(
+                                [string[]]$existing, [System.StringComparer]::OrdinalIgnoreCase)
+                            $existingPaths = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+                            foreach ($spec in $existing) {
+                                $cp = Get-VolumeContainerPath $spec
+                                if ($cp) { [void]$existingPaths.Add($cp) }
+                            }
+                            $accepted = @()
+                            foreach ($spec in @($platform.Value)) {
+                                if ($existingSpecs.Contains($spec)) { continue }
+                                $cp = Get-VolumeContainerPath $spec
+                                if ($cp -and $existingPaths.Contains($cp)) {
+                                    Write-Verbose "Volume '$spec' skipped: container path '$cp' already mapped by a closer config"
+                                    continue
+                                }
+                                $accepted += $spec
+                                if ($cp) { [void]$existingPaths.Add($cp) }
+                            }
+                            if ($accepted.Count -gt 0) {
+                                $result.$name.$pk = $existing + $accepted
+                            }
                         }
                         else {
                             $result.$name | Add-Member -MemberType NoteProperty -Name $pk -Value @($platform.Value) -Force

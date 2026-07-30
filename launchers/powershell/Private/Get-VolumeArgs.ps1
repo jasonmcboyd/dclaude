@@ -30,6 +30,24 @@ function Get-VolumeArgs {
         return @()
     }
 
+    # Dedup by container path: later entries (higher priority) win.
+    # Priority order: user < image < project (project is last in $allVolumes).
+    $seenPaths = @{}
+    $dedupedVolumes = @()
+    for ($i = 0; $i -lt $allVolumes.Count; $i++) {
+        $cp = Get-VolumeContainerPath $allVolumes[$i]
+        if ($cp) {
+            if ($seenPaths.ContainsKey($cp)) {
+                $prevIdx = $seenPaths[$cp]
+                Write-Verbose "Volume '$($allVolumes[$prevIdx])' overridden by '$($allVolumes[$i])' (same container path '$cp')"
+                $dedupedVolumes[$prevIdx] = $null
+            }
+            $seenPaths[$cp] = $i
+        }
+        $dedupedVolumes += $allVolumes[$i]
+    }
+    $allVolumes = @($dedupedVolumes | Where-Object { $_ -ne $null })
+
     $dockerArgs = @()
 
     # Expand environment variables, translate container-side paths for the

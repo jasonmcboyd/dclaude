@@ -10,6 +10,7 @@ BeforeAll {
     . "$PSScriptRoot/../../Private/Set-VolumeDefaultMode.ps1"
     . "$PSScriptRoot/../../Private/ConvertTo-ContainerPath.ps1"
     . "$PSScriptRoot/../../Private/Resolve-ContainerPaths.ps1"
+    . "$PSScriptRoot/../../Private/Get-VolumeContainerPath.ps1"
     . "$PSScriptRoot/../../Private/Get-VolumeArgs.ps1"
     . "$PSScriptRoot/../../Private/Get-EnvironmentPassthroughArgs.ps1"
     . "$PSScriptRoot/../../Private/Get-DClaudeModuleVersion.ps1"
