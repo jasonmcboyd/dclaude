@@ -6,21 +6,71 @@ on:
       - 'v*'
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # create the release and upload the binary assets
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create Module Manifest
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: entrypoint/go.mod
+
+      - name: Vet and test entrypoint
+        working-directory: entrypoint
+        run: |
+          go vet ./...
+          go test ./...
+
+      # Build the entrypoint binaries straight into the module's bin/ so they ship inside the
+      # PowerShell module (the launcher mounts them into the container at run time). The same
+      # files are also attached to the GitHub release for direct download.
+      - name: Build entrypoint binaries into the module
+        working-directory: entrypoint
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          bin="../launchers/powershell/bin"
+          mkdir -p "$bin"
+          for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            ext=""
+            if [ "$os" = "windows" ]; then
+              ext=".exe"
+            fi
+            out="$bin/dclaude-entrypoint-${os}-${arch}${ext}"
+            echo "building $out"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" \
+              go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "$out" .
+          done
+          ls -l "$bin"
+
+      - name: Attach binaries to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: launchers/powershell/bin/*
+
+      - name: Create module manifest (bundles bin/)
         shell: pwsh
         env:
           MODULE_VERSION: ${{ github.ref_name }}
-        run: ./scripts/create-module-manifest.ps1 -Version $env:MODULE_VERSION
+        run: ./launchers/powershell/scripts/create-module-manifest.ps1 -Version $env:MODULE_VERSION
 
-      - name: Publish To PowerShell Gallery
+      - name: Validate packaged module
+        shell: pwsh
+        run: |
+          $m = Test-ModuleManifest ./publish/dclaude/dclaude.psd1
+          Import-Module ./publish/dclaude/dclaude.psd1 -Force
+          $bins = Get-ChildItem ./publish/dclaude/bin -File
+          Write-Host "manifest OK: v$($m.Version), $((Get-Command -Module dclaude).Count) commands, $($bins.Count) bundled binaries"
+          if ($bins.Count -lt 4) { throw "expected 4 bundled binaries, found $($bins.Count)" }
+
+      - name: Publish to PowerShell Gallery
         shell: pwsh
         env:
           NUGET_API_KEY: ${{ secrets.POWERSHELL_GALLERY_API_KEY }}
