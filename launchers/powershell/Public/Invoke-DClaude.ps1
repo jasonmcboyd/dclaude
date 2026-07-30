@@ -130,13 +130,17 @@ function Invoke-DClaude {
     $imageName = $null
     switch ($PSCmdlet.ParameterSetName) {
         'ByImage' {
+            Write-Debug "[image] -Image parameter: $Image"
             $imageTag = $Image
         }
         'ByImageKey' {
+            Write-Debug "[image] -ImageKey parameter: $ImageKey"
             $imageKeyToResolve = $ImageKey
         }
         'Default' {
+            Write-Debug '[image] No -Image or -ImageKey parameter; checking config'
             if ($config -and $config.PSObject.Properties['defaultImageKey']) {
+                Write-Debug "[image] Project config defaultImageKey = '$($config.defaultImageKey)'"
                 $imageKeyToResolve = $config.defaultImageKey
             }
             elseif ($config -and $config.PSObject.Properties['imageKey']) {
@@ -153,6 +157,7 @@ function Invoke-DClaude {
     if (-not $imageTag -and -not $imageKeyToResolve) {
         $uc = Get-DClaudeUserConfig
         if ($uc -and $uc.PSObject.Properties['defaultImageKey']) {
+            Write-Debug "[image] User config defaultImageKey = '$($uc.defaultImageKey)'"
             $imageKeyToResolve = $uc.defaultImageKey
         }
     }
@@ -165,6 +170,7 @@ function Invoke-DClaude {
         $imageVolumes = $resolved.volumes
         $imageEnvPassthrough = $resolved.envPassthrough
         $imageEnv = $resolved.env
+        Write-Debug "[image] Resolved imageKey '$imageKeyToResolve' -> tag '$imageTag' ($containerOS)"
     }
 
     if (-not $imageTag) {

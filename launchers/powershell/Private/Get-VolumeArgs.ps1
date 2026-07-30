@@ -16,18 +16,26 @@ function Get-VolumeArgs {
     )
 
     $allVolumes = @()
+    $volumeTiers = @()
     if ($UserVolumes.Count -gt 0) {
         $allVolumes += $UserVolumes
+        $volumeTiers += @('user') * $UserVolumes.Count
     }
     if ($ImageVolumes.Count -gt 0) {
         $allVolumes += $ImageVolumes
+        $volumeTiers += @('image') * $ImageVolumes.Count
     }
     if ($ProjectVolumes.Count -gt 0) {
         $allVolumes += $ProjectVolumes
+        $volumeTiers += @('project') * $ProjectVolumes.Count
     }
 
     if ($allVolumes.Count -eq 0) {
         return @()
+    }
+
+    foreach ($vi in 0..($allVolumes.Count - 1)) {
+        Write-Debug "[volumes] $($volumeTiers[$vi]): $($allVolumes[$vi])"
     }
 
     # Dedup by container path: later entries (higher priority) win.
@@ -40,6 +48,7 @@ function Get-VolumeArgs {
             if ($seenPaths.ContainsKey($cp)) {
                 $prevIdx = $seenPaths[$cp]
                 Write-Verbose "Volume '$($allVolumes[$prevIdx])' overridden by '$($allVolumes[$i])' (same container path '$cp')"
+                Write-Debug "[volumes] Conflict on $cp`: $($volumeTiers[$i]) '$($allVolumes[$i])' overrides $($volumeTiers[$prevIdx]) '$($allVolumes[$prevIdx])'"
                 $dedupedVolumes[$prevIdx] = $null
             }
             $seenPaths[$cp] = $i
