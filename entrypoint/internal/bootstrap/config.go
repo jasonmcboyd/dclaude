@@ -17,6 +17,7 @@ type Config struct {
 	HostOS     string // DCLAUDE_HOST_OS: windows|linux|macos (the scenario-3 seam)
 	Contract   string // DCLAUDE_CONTRACT: launcher/binary contract version
 	Verbose    bool   // DCLAUDE_VERBOSE
+	McpInject  string // DCLAUDE_MCP_INJECT: JSON map of MCP servers to merge into project config
 }
 
 // Load reads the bootstrap contract from the environment, applying OS defaults.
@@ -29,6 +30,7 @@ func Load() *Config {
 		HostOS:     os.Getenv("DCLAUDE_HOST_OS"),
 		Contract:   os.Getenv("DCLAUDE_CONTRACT"),
 		Verbose:    os.Getenv("DCLAUDE_VERBOSE") != "",
+		McpInject:  os.Getenv("DCLAUDE_MCP_INJECT"),
 	}
 }
 

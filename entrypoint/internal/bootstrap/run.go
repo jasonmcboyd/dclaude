@@ -33,6 +33,7 @@ func Run(cfg *Config, p Platform, log *Logger, claudeArgs []string) {
 	}
 
 	sanitizeClaudeJSON(cfg, log)
+	injectMcpServers(cfg, log)
 	reportSessions(cfg, log)
 	runInitScripts(cfg, p, log)
 
@@ -79,6 +80,30 @@ func sanitizeClaudeJSON(cfg *Config, log *Logger) {
 	if err := os.WriteFile(cfg.ClaudeJSONDest(), out, 0o600); err != nil {
 		log.Warnf("write %s: %v", cfg.ClaudeJSONDest(), err)
 	}
+}
+
+// injectMcpServers merges sidecar MCP server entries into the sanitized .claude.json.
+// This is best-effort: a failure logs a warning and lets claude launch without the
+// injected servers.
+func injectMcpServers(cfg *Config, log *Logger) {
+	if cfg.McpInject == "" {
+		return
+	}
+	dest := cfg.ClaudeJSONDest()
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		log.Warnf("read %s for MCP inject: %v", dest, err)
+		return
+	}
+	out, err := sanitize.MergeMcpServers(data, cfg.Workspace, cfg.McpInject)
+	if err != nil {
+		log.Warnf("merge MCP servers: %v", err)
+		return
+	}
+	if err := os.WriteFile(dest, out, 0o600); err != nil {
+		log.Warnf("write %s after MCP inject: %v", dest, err)
+	}
+	log.Verbosef("injected MCP servers from DCLAUDE_MCP_INJECT")
 }
 
 // reportSessions reports how many prior /resume sessions exist for this workspace.

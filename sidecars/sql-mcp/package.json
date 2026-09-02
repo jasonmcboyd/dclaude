@@ -1,0 +1,15 @@
+{
+  "name": "@dclaude/sql-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "mssql": "^11.0.1",
+    "node-sql-parser": "^5.3.8",
+    "zod": "^3.25.67"
+  }
+}

@@ -26,6 +26,11 @@ launchers/
     tests/                      #   Pester 5 tests mirroring Public/ and Private/
     scripts/                    #   create-module-manifest.ps1 (CI manifest gen), reset-dev-environment.ps1, use-dev-entrypoint.ps1, test-package-deploy.ps1
     bin/                        #   compiled Go entrypoint binaries (dclaude-entrypoint-<os>-<arch>[.exe]); built by CI, gitignored
+sidecars/
+  sql-mcp/                      # Node.js MCP server for read-only SQL Server access
+    server.js                   #   Streamable HTTP MCP server on port 3100
+    package.json                #   deps: @modelcontextprotocol/sdk, mssql, node-sql-parser
+    Dockerfile                  #   node:22-slim with HEALTHCHECK
 docs/architecture/             # platform-bootstrap.md, go-entrypoint-design.md
 .github/workflows/
   publish-release.yml          # CI/CD: build Go binaries + publish module to PSGallery on tag (v*)
@@ -168,6 +173,29 @@ The Go `sanitize` package performs all `.claude.json` transformations before Cla
 | `officialMarketplaceAutoInstalled` | Set to `true` (skip marketplace prompt) |
 
 The Go entrypoint reads from `~/.claude/.claude.json` (inside the direct `~/.claude` mount) and writes the sanitized result to `~/.claude.json`.
+
+### MCP Server Injection
+
+The Go entrypoint supports injecting MCP server configurations via the `DCLAUDE_MCP_INJECT` environment variable. The value is a JSON object mapping server names to their config (e.g. `{"sql-mcp":{"url":"http://sql-mcp:3100/mcp"}}`). After sanitization, the entrypoint merges these entries into the project's `mcpServers` map. Existing user-configured servers with the same name take precedence (no overwrite).
+
+### SQL MCP Sidecar
+
+The `-SqlConnection` parameter on `Invoke-DClaude` launches a read-only SQL Server MCP sidecar:
+
+```powershell
+dclaude -SqlConnection @{
+    AppData      = Read-Host "AppData" -AsSecureString
+    InvestorData = Read-Host "InvestorData" -AsSecureString
+}
+```
+
+**Security model:** Connection strings are held only in the sidecar container. The main Claude container connects via HTTP over a private Docker network and never sees the credentials. The sidecar enforces read-only access via statement validation (`node-sql-parser`, T-SQL dialect — only SELECT allowed) and always-rollback transactions as defense-in-depth.
+
+**Architecture:** The launcher creates a Docker network, starts the sidecar (`dclaude-sql-mcp:v{version}` image, built lazily from `sidecars/sql-mcp/Dockerfile`), waits for its health check, then starts the main container on the same network with `DCLAUDE_MCP_INJECT` pointing at the sidecar. On exit (including Ctrl+C), a `finally` block stops the sidecar and removes the network.
+
+**MCP tools exposed:** `list-databases`, `list-tables(database, schema?)`, `describe-table(database, schema, table)`, `query(database, sql)`.
+
+**Constraints:** Linux containers only. The sidecar image is `node:22-slim` (glibc).
 
 ## Logging / Verbosity
 

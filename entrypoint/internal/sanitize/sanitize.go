@@ -67,6 +67,65 @@ func Sanitize(source []byte, workspaceKey, hostPath string) ([]byte, error) {
 	return out, nil
 }
 
+// MergeMcpServers merges injected MCP server entries into the project's mcpServers map
+// within an already-sanitized .claude.json. Existing server names take precedence over
+// injected ones, so user-configured MCP servers are never overwritten.
+//
+// serversJSON is a JSON object mapping server names to their config objects, e.g.
+// `{"sql-mcp":{"url":"http://sql-mcp:3100/mcp"}}`. An empty serversJSON is a no-op.
+func MergeMcpServers(sanitized []byte, workspaceKey, serversJSON string) ([]byte, error) {
+	if serversJSON == "" {
+		return sanitized, nil
+	}
+
+	// Decode the servers to inject.
+	dec := json.NewDecoder(bytes.NewReader([]byte(serversJSON)))
+	dec.UseNumber()
+	var servers map[string]any
+	if err := dec.Decode(&servers); err != nil {
+		return nil, fmt.Errorf("parse MCP inject JSON: %w", err)
+	}
+	if len(servers) == 0 {
+		return sanitized, nil
+	}
+
+	// Decode the sanitized config.
+	rdec := json.NewDecoder(bytes.NewReader(sanitized))
+	rdec.UseNumber()
+	var root map[string]any
+	if err := rdec.Decode(&root); err != nil {
+		return nil, fmt.Errorf("parse sanitized .claude.json: %w", err)
+	}
+
+	normalizedKey := strings.ReplaceAll(workspaceKey, `\`, "/")
+
+	projects, ok := root["projects"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("projects map missing in sanitized config")
+	}
+	entry, ok := projects[normalizedKey].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("project entry %q missing in sanitized config", normalizedKey)
+	}
+
+	mcpServers, _ := entry["mcpServers"].(map[string]any)
+	if mcpServers == nil {
+		mcpServers = map[string]any{}
+	}
+	for name, cfg := range servers {
+		if _, exists := mcpServers[name]; !exists {
+			mcpServers[name] = cfg
+		}
+	}
+	entry["mcpServers"] = mcpServers
+
+	out, err := json.MarshalIndent(root, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("encode .claude.json after MCP merge: %w", err)
+	}
+	return out, nil
+}
+
 // matchingProjectEntry returns the host project entry keyed by hostPath (trying both the
 // raw and forward-slash forms), or nil if absent.
 func matchingProjectEntry(projects any, hostPath string) map[string]any {

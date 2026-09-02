@@ -28,6 +28,9 @@ LocalScripts/
 # Local settings overrides
 settings.local.json
 
+# Node.js
+node_modules/
+
 # Temp
 *.tmp
 *.log

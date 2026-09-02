@@ -34,6 +34,14 @@
 .PARAMETER Force
     Suppresses the Docker access confirmation prompt. Has no effect without -DockerAccess.
 
+.PARAMETER SqlConnection
+    Hashtable mapping database names to SecureString connection strings. Launches an SQL
+    MCP sidecar container that holds the credentials and enforces read-only access. The
+    main Claude container connects to the sidecar over a Docker network and never sees the
+    connection strings. Linux containers only.
+
+    Example: -SqlConnection @{ AppData = (Read-Host 'Connection string' -AsSecureString) }
+
 .PARAMETER Update
     Before launching, check whether the runtime volume's Claude Code is older than the latest
     published version and provision an updated runtime volume if so. Running containers are
@@ -58,6 +66,11 @@
     dclaude -DockerAccess
 
     Runs with the Docker socket mounted, allowing Claude to build images and run containers.
+
+.EXAMPLE
+    dclaude -SqlConnection @{ AppData = (Read-Host -AsSecureString); InvestorData = (Read-Host -AsSecureString) }
+
+    Launches with read-only SQL access. Connection strings are held in a sidecar container.
 #>
 function Invoke-DClaude {
     [CmdletBinding(DefaultParameterSetName = 'Default')]
@@ -76,6 +89,8 @@ function Invoke-DClaude {
 
         [Parameter(ValueFromRemainingArguments)]
         [string[]]$ClaudeArgs,
+
+        [hashtable]$SqlConnection,
 
         [switch]$DockerAccess,
 
@@ -97,6 +112,20 @@ function Invoke-DClaude {
     if ($containerOS -notin @('windows', 'linux')) {
         Write-Error "Unsupported Docker OS type '$containerOS'. Only 'windows' and 'linux' are supported."
         return
+    }
+
+    # Validate SqlConnection parameter
+    if ($SqlConnection) {
+        if ($containerOS -ne 'linux') {
+            Write-Error '-SqlConnection requires Linux containers. Windows containers are not supported for the SQL MCP sidecar.'
+            return
+        }
+        foreach ($key in $SqlConnection.Keys) {
+            if ($SqlConnection[$key] -isnot [System.Security.SecureString]) {
+                Write-Error "SqlConnection value for '$key' must be a SecureString. Use: Read-Host -AsSecureString"
+                return
+            }
+        }
     }
 
     # Confirm Docker access before doing any provisioning work
@@ -230,13 +259,31 @@ When a referenced path does not exist:
 
     # Build docker run arguments
     $leafName = (Split-Path $resolvedPath -Leaf) -replace '[^a-zA-Z0-9_.-]', '-'
-    $containerName = "dclaude-${leafName}-$(Get-Random -Maximum 9999)"
+    $randomSuffix = Get-Random -Maximum 9999
+    $containerName = "dclaude-${leafName}-${randomSuffix}"
+
+    # Start SQL MCP sidecar if requested
+    $sidecar = $null
+    if ($SqlConnection) {
+        $networkName = "dclaude-net-${leafName}-${randomSuffix}"
+        $sidecar = Start-SqlMcpSidecar -SqlConnections $SqlConnection -NetworkName $networkName -ModuleVersion $moduleVersion
+        if (-not $sidecar) { return }
+    }
     $dockerArgs = @(
         'run', '-it', '--rm'
         '--name', $containerName
-        '-v', "${resolvedPath}:$($paths.Workspace):rw"
-        '-w', $paths.Workspace
     )
+
+    # Join the sidecar's Docker network
+    if ($sidecar) {
+        $dockerArgs += '--network'
+        $dockerArgs += $sidecar.NetworkName
+    }
+
+    $dockerArgs += '-v'
+    $dockerArgs += "${resolvedPath}:$($paths.Workspace):rw"
+    $dockerArgs += '-w'
+    $dockerArgs += $paths.Workspace
 
     # Mount runtime volume (Node.js + Claude Code) read-only
     $dockerArgs += '-v'
@@ -332,6 +379,13 @@ When a referenced path does not exist:
     $dockerArgs += '-e'
     $dockerArgs += 'DCLAUDE_CONTRACT=1'
 
+    # Inject MCP sidecar config for the Go entrypoint to merge into .claude.json
+    if ($sidecar) {
+        $mcpInject = @{ 'sql-mcp' = @{ url = $sidecar.McpUrl } } | ConvertTo-Json -Compress
+        $dockerArgs += '-e'
+        $dockerArgs += "DCLAUDE_MCP_INJECT=$mcpInject"
+    }
+
     # Inject env constants from image config
     if ($imageEnv) {
         foreach ($prop in $imageEnv.PSObject.Properties) {
@@ -404,5 +458,15 @@ When a referenced path does not exist:
     Write-LaunchSummary -ImageTag $imageTag -ImageName $imageName -DockerArgs $dockerArgs
 
     # Launch the container
-    & docker @dockerArgs
+    if ($sidecar) {
+        try {
+            & docker @dockerArgs
+        }
+        finally {
+            Stop-SqlMcpSidecar -SidecarName $sidecar.SidecarName -NetworkName $sidecar.NetworkName
+        }
+    }
+    else {
+        & docker @dockerArgs
+    }
 }
