@@ -1,0 +1,100 @@
+# dclaude build image
+#
+# Single Linux image (debian:bookworm-slim) that covers everything needed to
+# build, test, and package dclaude — including Windows artifacts.
+#
+# Go cross-compiles entrypoint binaries for all four targets from Linux:
+#   linux/amd64, linux/arm64, windows/amd64, windows/arm64
+# PowerShell 7 + Pester 5 run natively on Linux (no Windows container needed).
+#
+# Provides:
+#   - Go 1.22      — entrypoint cross-compilation + go test
+#   - Node.js 22   — sql-mcp sidecar (npm ci, node_modules)
+#   - PowerShell 7 — launcher scripts, create-module-manifest.ps1, Invoke-Pester
+#   - Pester 5     — PowerShell unit tests
+#   - Git          — go mod, npm, general VCS
+#   - jq           — JSON inspection / CI scripting
+#   - make         — optional build orchestration
+#
+# Usage (from repo root):
+#   docker build -f docker/Dockerfile.build -t dclaude-build:latest .
+#   docker run --rm -v "$PWD":/workspace -w /workspace dclaude-build:latest bash
+#
+# Build the entrypoint (example):
+#   docker run --rm -v "$PWD":/workspace -w /workspace/entrypoint dclaude-build:latest \
+#     bash -c 'for t in linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+#       os=${t%/*}; arch=${t#*/}; ext=$([ "$os" = windows ] && echo .exe)
+#       CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w" \
+#         -o ../launchers/powershell/bin/dclaude-entrypoint-${os}-${arch}${ext} .
+#     done'
+#
+# Run all tests:
+#   docker run --rm -v "$PWD":/workspace -w /workspace dclaude-build:latest bash -c \
+#     'cd entrypoint && go vet ./... && go test ./... && cd .. &&
+#      pwsh -Command "Invoke-Pester launchers/powershell/tests -Output Detailed"'
+
+FROM debian:bookworm-slim
+
+# ─── System packages ──────────────────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        git \
+        jq \
+        make \
+        unzip \
+        xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# ─── Go ───────────────────────────────────────────────────────────────────────
+# Pinned to the same major.minor as entrypoint/go.mod (go 1.22).
+ARG GO_VERSION=1.22.12
+RUN curl -fsSL "https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz" \
+      | tar -C /usr/local -xz
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/go"
+ENV GOCACHE="/go/cache"
+
+# Pre-build the standard library for all four release targets so subsequent
+# `go build` runs inside this image are fully offline (no network during CI).
+RUN go version \
+ && CGO_ENABLED=0 GOOS=linux   GOARCH=amd64 go build std \
+ && CGO_ENABLED=0 GOOS=linux   GOARCH=arm64 go build std \
+ && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build std \
+ && CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build std
+
+# ─── Node.js 22 LTS ───────────────────────────────────────────────────────────
+# Match the version baked into dclaude runtime volumes (DClaudeConstants.ps1).
+ARG NODE_VERSION=22.14.0
+RUN curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      | tar -C /usr/local --strip-components=1 -xJ \
+ && node --version && npm --version
+
+# ─── PowerShell 7 ─────────────────────────────────────────────────────────────
+# PS7 runs natively on Linux; no Windows container needed for launcher testing.
+ARG PWSH_VERSION=7.4.6
+RUN mkdir -p /opt/powershell \
+ && curl -fsSL "https://github.com/PowerShell/PowerShell/releases/download/v${PWSH_VERSION}/powershell-${PWSH_VERSION}-linux-x64.tar.gz" \
+      | tar -C /opt/powershell -xz \
+ && ln -sf /opt/powershell/pwsh /usr/local/bin/pwsh \
+ && pwsh --version
+
+# ─── Pester 5 ─────────────────────────────────────────────────────────────────
+RUN pwsh -NoProfile -Command \
+    "Set-PSRepository PSGallery -InstallationPolicy Trusted; \
+     Install-Module Pester -MinimumVersion 5.0 -MaximumVersion 5.99 -Force -Scope AllUsers" \
+ && pwsh -NoProfile -Command "Import-Module Pester; (Get-Module Pester).Version.ToString()"
+
+# ─── Verify toolchain ─────────────────────────────────────────────────────────
+RUN go version \
+ && node --version \
+ && npm --version \
+ && pwsh --version \
+ && git --version \
+ && jq --version
+
+# ─── Working directory ────────────────────────────────────────────────────────
+WORKDIR /workspace
+
+CMD ["bash"]

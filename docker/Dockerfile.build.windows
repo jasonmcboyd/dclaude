@@ -1,0 +1,153 @@
+# escape=`
+# dclaude build image (Windows containers)
+#
+# For Windows containers mode on a Windows host. Provides everything needed to
+# build, test, and package dclaude from a Windows container:
+#   - Go 1.22      — entrypoint cross-compilation + go test
+#   - Node.js 22   — sql-mcp sidecar (npm ci, node_modules)
+#   - PowerShell 7 — launcher scripts, create-module-manifest.ps1, Invoke-Pester
+#   - Pester 5     — PowerShell unit tests
+#   - MinGit       — same version as dclaude runtime volumes (go mod, npm, VCS)
+#   - jq           — JSON inspection / CI scripting
+#
+# Requires Windows containers mode.
+# To switch: right-click Docker Desktop tray → "Switch to Windows containers..."
+#
+# Usage (from repo root):
+#   docker build -f docker/Dockerfile.build.windows -t dclaude-build-windows:latest .
+#   docker run --rm -v "%CD%":C:\workspace -w C:\workspace dclaude-build-windows:latest powershell
+#
+# Run all tests:
+#   docker run --rm -v "%CD%":C:\workspace -w C:\workspace dclaude-build-windows:latest `
+#     powershell -Command "cd entrypoint; go vet ./...; go test ./...; cd ..; `
+#       Invoke-Pester launchers/powershell/tests -Output Detailed"
+
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+
+# Use PowerShell as the default shell for RUN commands.
+# SilentlyContinue suppresses the enormous progress-bar output during downloads.
+SHELL ["powershell", "-NoProfile", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# ─── Versions (override at build time with --build-arg) ───────────────────────
+ARG GO_VERSION=1.22.12
+ARG NODE_VERSION=22.14.0
+ARG PWSH_VERSION=7.4.6
+ARG MINGIT_VERSION=2.47.1.windows.2
+ARG JQ_VERSION=1.7.1
+
+# ─── Go ───────────────────────────────────────────────────────────────────────
+RUN Invoke-WebRequest -UseBasicParsing `
+      "https://dl.google.com/go/go$($env:GO_VERSION).windows-amd64.zip" `
+      -OutFile C:\go-dist.zip; `
+    Expand-Archive C:\go-dist.zip -DestinationPath C:\; `
+    Remove-Item C:\go-dist.zip
+
+# PATH must be written to the Machine registry scope — Docker's ENV PATH="${PATH}"
+# expands ${PATH} to empty string on Windows (not a Docker env var, only a registry
+# entry), which strips all system paths and breaks subsequent RUN commands.
+RUN [System.Environment]::SetEnvironmentVariable( `
+      'PATH', `
+      'C:\Go\bin;' + [System.Environment]::GetEnvironmentVariable('PATH', 'Machine'), `
+      'Machine')
+
+# GOPATH and GOCACHE are new variables — Docker ENV works fine for these.
+ENV GOPATH="C:\gopath"
+ENV GOCACHE="C:\gocache"
+
+RUN go version
+
+# Pre-build the standard library for all four release targets so subsequent
+# `go build` runs are fully offline (no network calls during CI builds).
+RUN $env:CGO_ENABLED = '0'; `
+    foreach ($target in @('linux/amd64','linux/arm64','windows/amd64','windows/arm64')) { `
+        $parts = $target -split '/'; `
+        $env:GOOS = $parts[0]; $env:GOARCH = $parts[1]; `
+        Write-Host "go build std: $($env:GOOS)/$($env:GOARCH)"; `
+        go build std `
+    }
+
+# ─── Node.js 22 LTS ───────────────────────────────────────────────────────────
+# Match the version baked into dclaude runtime volumes (DClaudeConstants.ps1).
+RUN Invoke-WebRequest -UseBasicParsing `
+      "https://nodejs.org/dist/v$($env:NODE_VERSION)/node-v$($env:NODE_VERSION)-win-x64.zip" `
+      -OutFile C:\node-dist.zip; `
+    Expand-Archive C:\node-dist.zip -DestinationPath C:\node-tmp; `
+    Move-Item "C:\node-tmp\node-v$($env:NODE_VERSION)-win-x64" C:\nodejs; `
+    Remove-Item C:\node-dist.zip, C:\node-tmp -Recurse
+
+RUN [System.Environment]::SetEnvironmentVariable( `
+      'PATH', `
+      'C:\nodejs;' + [System.Environment]::GetEnvironmentVariable('PATH', 'Machine'), `
+      'Machine')
+
+RUN node --version; npm --version
+
+# ─── PowerShell 7 ─────────────────────────────────────────────────────────────
+# Extract to the standard MSI location so pwsh finds its own bundled modules
+# (PowerShellGet 2.x, PSResourceGet). Extracting elsewhere causes pwsh to fall
+# back to the PS5.1 shared module path and load PowerShellGet 1.0.0.1, which
+# calls ShouldContinue and blows up in non-interactive Docker RUN steps.
+RUN Invoke-WebRequest -UseBasicParsing `
+      "https://github.com/PowerShell/PowerShell/releases/download/v$($env:PWSH_VERSION)/PowerShell-$($env:PWSH_VERSION)-win-x64.zip" `
+      -OutFile C:\pwsh-dist.zip; `
+    New-Item -ItemType Directory -Force -Path 'C:\Program Files\PowerShell\7' | Out-Null; `
+    Expand-Archive C:\pwsh-dist.zip -DestinationPath 'C:\Program Files\PowerShell\7'; `
+    Remove-Item C:\pwsh-dist.zip
+
+RUN [System.Environment]::SetEnvironmentVariable( `
+      'PATH', `
+      'C:\Program Files\PowerShell\7;' + [System.Environment]::GetEnvironmentVariable('PATH', 'Machine'), `
+      'Machine')
+
+RUN pwsh --version
+
+# ─── Pester 5 ─────────────────────────────────────────────────────────────────
+# Use Install-PSResource (Microsoft.PowerShell.PSResourceGet, ships with PS7.4)
+# instead of Install-Module. PSResourceGet does not need the NuGet provider and
+# does not call ShouldContinue, making it safe in non-interactive containers.
+RUN pwsh -NoProfile -NonInteractive -Command `
+      "$ProgressPreference = 'SilentlyContinue'; `
+       Set-PSResourceRepository -Name PSGallery -Trusted; `
+       Install-PSResource -Name Pester -Version '[5.0.0,6.0.0)' -Scope AllUsers; `
+       Import-Module Pester; `
+       (Get-Module Pester).Version.ToString()"
+
+# ─── MinGit ───────────────────────────────────────────────────────────────────
+# Same version as DClaudeConstants.ps1 MinGit entry. Tag uses 'windows' form;
+# zip filename replaces '.windows.' with '.' (e.g. 2.47.1.windows.2 -> 2.47.1.2).
+RUN $tag = "v$($env:MINGIT_VERSION)"; `
+    $zipVer = $env:MINGIT_VERSION -replace '\.windows\.', '.'; `
+    $file = "MinGit-${zipVer}-64-bit.zip"; `
+    Invoke-WebRequest -UseBasicParsing `
+      "https://github.com/git-for-windows/git/releases/download/${tag}/${file}" `
+      -OutFile C:\mingit-dist.zip; `
+    Expand-Archive C:\mingit-dist.zip -DestinationPath C:\mingit; `
+    Remove-Item C:\mingit-dist.zip
+
+RUN [System.Environment]::SetEnvironmentVariable( `
+      'PATH', `
+      'C:\mingit\cmd;' + [System.Environment]::GetEnvironmentVariable('PATH', 'Machine'), `
+      'Machine')
+
+RUN git --version
+
+# ─── jq ───────────────────────────────────────────────────────────────────────
+# Drop the binary directly into System32 so it's on PATH without further config.
+RUN Invoke-WebRequest -UseBasicParsing `
+      "https://github.com/jqlang/jq/releases/download/jq-$($env:JQ_VERSION)/jq-windows-amd64.exe" `
+      -OutFile C:\Windows\System32\jq.exe
+
+RUN jq --version
+
+# ─── Verify toolchain ─────────────────────────────────────────────────────────
+RUN go version; `
+    node --version; `
+    npm --version; `
+    pwsh --version; `
+    git --version; `
+    jq --version
+
+# ─── Working directory ────────────────────────────────────────────────────────
+WORKDIR C:\workspace
+
+CMD ["powershell"]
