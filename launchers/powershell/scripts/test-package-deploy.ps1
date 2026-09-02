@@ -78,8 +78,9 @@ $packageDir = Join-Path $repoRoot 'publish/dclaude'
 
 # 3. Publish to a local file-based repository and 4. Save into an isolated path.
 $repoName     = 'dclaude-localtest'
-$localRepoDir = Join-Path ([System.IO.Path]::GetTempPath()) 'dclaude-localrepo'
-$installRoot  = Join-Path ([System.IO.Path]::GetTempPath()) 'dclaude-localmodules'
+$testRoot     = Join-Path $env:LOCALAPPDATA 'dclaude\test-deploy'
+$localRepoDir = Join-Path $testRoot 'localrepo'
+$installRoot  = Join-Path $testRoot 'modules'
 New-Item -ItemType Directory -Path $localRepoDir, $installRoot -Force | Out-Null
 
 if (Get-PSRepository -Name $repoName -ErrorAction SilentlyContinue) {
