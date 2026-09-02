@@ -110,11 +110,14 @@ RUN ["C:\\Program Files\\PowerShell\\7\\pwsh.exe", "-NoProfile", "-NonInteractiv
 # ─── MinGit ───────────────────────────────────────────────────────────────────
 # Same version as DClaudeConstants.ps1 MinGit entry. Tag uses 'windows' form;
 # zip filename replaces '.windows.' with '.' (e.g. 2.47.1.windows.2 -> 2.47.1.2).
-RUN $tag = "v$($env:MINGIT_VERSION)"; `
+# Variable assignments use single-quote concatenation because the powershell
+# SHELL strips double quotes before PS sees the script, turning expression-mode
+# assignments into command invocations (e.g. $tag = v... → tries to run "v...").
+RUN $tag = 'v' + $env:MINGIT_VERSION; `
     $zipVer = $env:MINGIT_VERSION -replace '\.windows\.', '.'; `
-    $file = "MinGit-${zipVer}-64-bit.zip"; `
+    $file = 'MinGit-' + $zipVer + '-64-bit.zip'; `
     Invoke-WebRequest -UseBasicParsing `
-      "https://github.com/git-for-windows/git/releases/download/${tag}/${file}" `
+      ('https://github.com/git-for-windows/git/releases/download/' + $tag + '/' + $file) `
       -OutFile C:\mingit-dist.zip; `
     Expand-Archive C:\mingit-dist.zip -DestinationPath C:\mingit; `
     Remove-Item C:\mingit-dist.zip
