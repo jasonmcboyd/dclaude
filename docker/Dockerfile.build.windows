@@ -102,15 +102,10 @@ RUN [System.Environment]::SetEnvironmentVariable( `
 RUN pwsh --version
 
 # ─── Pester 5 ─────────────────────────────────────────────────────────────────
-# Use Install-PSResource (Microsoft.PowerShell.PSResourceGet, ships with PS7.4)
-# instead of Install-Module. PSResourceGet does not need the NuGet provider and
-# does not call ShouldContinue, making it safe in non-interactive containers.
-RUN pwsh -NoProfile -NonInteractive -Command `
-      "$ProgressPreference = 'SilentlyContinue'; `
-       Set-PSResourceRepository -Name PSGallery -Trusted; `
-       Install-PSResource -Name Pester -Version '[5.0.0,6.0.0)' -Scope AllUsers; `
-       Import-Module Pester; `
-       (Get-Module Pester).Version.ToString()"
+# Exec form bypasses the powershell SHELL, avoiding $variable expansion that
+# mangles the command (SHELL is PS5.1 which expands $ProgressPreference before
+# pwsh sees it). Install-PSResource ships with PS7.4 — no NuGet provider needed.
+RUN ["C:\\Program Files\\PowerShell\\7\\pwsh.exe", "-NoProfile", "-NonInteractive", "-Command", "$ProgressPreference = 'SilentlyContinue'; Set-PSResourceRepository -Name PSGallery -Trusted; Install-PSResource -Name Pester -Version '[5.0.0,6.0.0)' -Scope AllUsers; Import-Module Pester; (Get-Module Pester).Version.ToString()"]
 
 # ─── MinGit ───────────────────────────────────────────────────────────────────
 # Same version as DClaudeConstants.ps1 MinGit entry. Tag uses 'windows' form;
