@@ -36,7 +36,7 @@ Describe 'Start-SqlMcpSidecar' {
                 $args[0] -eq 'inspect'
             }
 
-            $conns = @{ AppData = (NewSecureString 'Server=localhost;Database=AppData') }
+            $conns = @((NewSecureString 'Server=localhost;Database=AppData'))
             $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-test-1234' -ModuleVersion ([version]'1.0.0')
 
             $result | Should -Not -BeNullOrEmpty
@@ -74,7 +74,7 @@ Describe 'Start-SqlMcpSidecar' {
                 $args[0] -eq 'inspect'
             }
 
-            $conns = @{ TestDB = (NewSecureString 'Server=test') }
+            $conns = @((NewSecureString 'Server=test'))
             $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-proj-42' -ModuleVersion ([version]'2.0.0')
 
             $result | Should -Not -BeNullOrEmpty
@@ -100,7 +100,7 @@ Describe 'Start-SqlMcpSidecar' {
                 $args[0] -eq 'inspect'
             }
 
-            $conns = @{ DB = (NewSecureString 'Server=x') }
+            $conns = @((NewSecureString 'Server=x'))
             $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-t-1' -ModuleVersion ([version]'1.0.0') -ErrorVariable err -ErrorAction SilentlyContinue
 
             $result | Should -BeNullOrEmpty
@@ -118,7 +118,7 @@ Describe 'Start-SqlMcpSidecar' {
     }
 
     Context 'when multiple connections are provided' {
-        It 'passes all connection strings as env vars' {
+        It 'passes all connection strings as numbered env vars' {
             Mock docker { return '{}' } -ParameterFilter {
                 $args[0] -eq 'image' -and $args[1] -eq 'inspect'
             }
@@ -136,17 +136,16 @@ Describe 'Start-SqlMcpSidecar' {
                 $args[0] -eq 'inspect'
             }
 
-            $conns = @{
-                AppData      = (NewSecureString 'conn1')
-                InvestorData = (NewSecureString 'conn2')
-            }
+            $conns = @(
+                (NewSecureString 'Server=srv1;Database=AppData')
+                (NewSecureString 'Server=srv2;Database=InvestorData')
+            )
             $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-m-1' -ModuleVersion ([version]'1.0.0')
 
             $result | Should -Not -BeNullOrEmpty
-            # Verify both connection env vars are in the docker run args
             $runArgs = $script:capturedRunArgs -join ' '
-            $runArgs | Should -Match 'SQL_CONN_AppData'
-            $runArgs | Should -Match 'SQL_CONN_InvestorData'
+            $runArgs | Should -Match 'SQL_CONN_1='
+            $runArgs | Should -Match 'SQL_CONN_2='
         }
     }
 
@@ -159,7 +158,7 @@ Describe 'Start-SqlMcpSidecar' {
                 $args[0] -eq 'network' -and $args[1] -eq 'create'
             }
 
-            $conns = @{ DB = (NewSecureString 'Server=x') }
+            $conns = @((NewSecureString 'Server=x'))
             $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-f-1' -ModuleVersion ([version]'1.0.0') -ErrorVariable err -ErrorAction SilentlyContinue
 
             $result | Should -BeNullOrEmpty

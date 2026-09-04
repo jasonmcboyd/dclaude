@@ -13,7 +13,7 @@ function Start-SqlMcpSidecar {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [hashtable]$SqlConnections,
+        [System.Security.SecureString[]]$SqlConnections,
 
         [Parameter(Mandatory)]
         [string]$NetworkName,
@@ -64,17 +64,17 @@ function Start-SqlMcpSidecar {
         '--network-alias', 'sql-mcp'
     )
 
-    foreach ($key in $SqlConnections.Keys) {
-        $secure = $SqlConnections[$key]
-        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    for ($i = 0; $i -lt $SqlConnections.Count; $i++) {
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SqlConnections[$i])
         try {
             $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
         }
         finally {
             [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
         }
+        $n = $i + 1
         $sidecarArgs += '-e'
-        $sidecarArgs += "SQL_CONN_${key}=${plain}"
+        $sidecarArgs += "SQL_CONN_${n}=${plain}"
     }
 
     $sidecarArgs += $imageTag

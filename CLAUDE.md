@@ -183,11 +183,10 @@ The Go entrypoint supports injecting MCP server configurations via the `DCLAUDE_
 The `-SqlConnection` parameter on `Invoke-DClaude` launches a read-only SQL Server MCP sidecar:
 
 ```powershell
-dclaude -SqlConnection @{
-    AppData      = Read-Host "AppData" -AsSecureString
-    InvestorData = Read-Host "InvestorData" -AsSecureString
-}
+dclaude -SqlConnection (Get-Secret sql-uat)
 ```
+
+Accepts one or more `[SecureString]` connection strings. The sidecar parses each connection string to extract server and database names (e.g. `myserver/AppData`) for use as pool identifiers in the MCP tools.
 
 **Security model:** Connection strings are held only in the sidecar container. The main Claude container connects via HTTP over a private Docker network and never sees the credentials. The sidecar enforces read-only access via statement validation (`node-sql-parser`, T-SQL dialect — only SELECT allowed) and always-rollback transactions as defense-in-depth.
 

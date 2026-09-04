@@ -35,12 +35,13 @@
     Suppresses the Docker access confirmation prompt. Has no effect without -DockerAccess.
 
 .PARAMETER SqlConnection
-    Hashtable mapping database names to SecureString connection strings. Launches an SQL
-    MCP sidecar container that holds the credentials and enforces read-only access. The
-    main Claude container connects to the sidecar over a Docker network and never sees the
-    connection strings. Linux containers only.
+    One or more SecureString connection strings for SQL Server. Launches an SQL MCP sidecar
+    container that holds the credentials and enforces read-only access. The main Claude
+    container connects to the sidecar over a Docker network and never sees the connection
+    strings. Database names are parsed from the connection strings automatically. Linux
+    containers only.
 
-    Example: -SqlConnection @{ AppData = (Read-Host 'Connection string' -AsSecureString) }
+    Example: -SqlConnection (Read-Host 'Connection string' -AsSecureString)
 
 .PARAMETER Update
     Before launching, check whether the runtime volume's Claude Code is older than the latest
@@ -68,7 +69,7 @@
     Runs with the Docker socket mounted, allowing Claude to build images and run containers.
 
 .EXAMPLE
-    dclaude -SqlConnection @{ AppData = (Read-Host -AsSecureString); InvestorData = (Read-Host -AsSecureString) }
+    dclaude -SqlConnection (Read-Host -AsSecureString)
 
     Launches with read-only SQL access. Connection strings are held in a sidecar container.
 #>
@@ -90,7 +91,7 @@ function Invoke-DClaude {
         [Parameter(ValueFromRemainingArguments)]
         [string[]]$ClaudeArgs,
 
-        [hashtable]$SqlConnection,
+        [System.Security.SecureString[]]$SqlConnection,
 
         [switch]$DockerAccess,
 
@@ -119,12 +120,6 @@ function Invoke-DClaude {
         if ($containerOS -ne 'linux') {
             Write-Error '-SqlConnection requires Linux containers. Windows containers are not supported for the SQL MCP sidecar.'
             return
-        }
-        foreach ($key in $SqlConnection.Keys) {
-            if ($SqlConnection[$key] -isnot [System.Security.SecureString]) {
-                Write-Error "SqlConnection value for '$key' must be a SecureString. Use: Read-Host -AsSecureString"
-                return
-            }
         }
     }
 

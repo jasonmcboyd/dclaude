@@ -11,13 +11,29 @@ const { Parser } = NodeSqlParser;
 const PORT = parseInt(process.env.SQL_MCP_PORT || '3100', 10);
 
 // ---------------------------------------------------------------------------
-// Connection pools — one per SQL_CONN_{name} env var
+// Connection string parsing — extract server and database for pool naming
+// ---------------------------------------------------------------------------
+function parseConnectionName(connStr) {
+  const pairs = new Map();
+  for (const part of connStr.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    pairs.set(part.slice(0, eq).trim().toLowerCase(), part.slice(eq + 1).trim());
+  }
+  const server = pairs.get('server') || pairs.get('data source') || 'unknown';
+  const host = server.replace(/^tcp:/, '').split(',')[0].split('\\')[0];
+  const db = pairs.get('database') || pairs.get('initial catalog') || '';
+  return db ? `${host}/${db}` : host;
+}
+
+// ---------------------------------------------------------------------------
+// Connection pools — one per SQL_CONN_{n} env var
 // ---------------------------------------------------------------------------
 const pools = new Map();
 
 for (const [key, value] of Object.entries(process.env)) {
   if (!key.startsWith('SQL_CONN_')) continue;
-  const name = key.slice('SQL_CONN_'.length);
+  const name = parseConnectionName(value);
   try {
     const pool = new sql.ConnectionPool(value);
     await pool.connect();
