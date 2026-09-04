@@ -35,8 +35,8 @@ function Start-SqlMcpSidecar {
 
     try {
         # Build the sidecar image if it doesn't already exist.
-        $existing = docker image inspect $imageTag 2>$null
-        if (-not $existing) {
+        docker image inspect $imageTag 2>&1 | Out-Null
+        if ($LASTEXITCODE -ne 0) {
             $moduleRoot = Split-Path $PSScriptRoot
             $sidecarDir = Join-Path $moduleRoot 'sidecars/sql-mcp'
             if (-not (Test-Path (Join-Path $sidecarDir 'Dockerfile'))) {
