@@ -54,10 +54,12 @@ function Start-SqlMcpSidecar {
         }
     }
 
-    # Create the Docker network.
-    docker network create $NetworkName 2>&1 | Out-Null
+    # Create the Docker network. Windows containers require the 'nat' driver;
+    # Linux defaults to 'bridge'.
+    $driver = if ($ContainerOS -eq 'windows') { 'nat' } else { 'bridge' }
+    $networkOutput = docker network create -d $driver $NetworkName 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to create Docker network '$NetworkName'."
+        Write-Error "Failed to create Docker network '$NetworkName': $networkOutput"
         return
     }
 
@@ -84,9 +86,9 @@ function Start-SqlMcpSidecar {
 
     $sidecarArgs += $imageTag
 
-    docker @sidecarArgs 2>&1 | Out-Null
+    $runOutput = docker @sidecarArgs 2>&1
     if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to start SQL MCP sidecar container."
+        Write-Error "Failed to start SQL MCP sidecar container: $runOutput"
         docker network rm $NetworkName 2>&1 | Out-Null
         return
     }
