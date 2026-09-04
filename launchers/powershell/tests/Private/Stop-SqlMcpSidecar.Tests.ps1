@@ -18,6 +18,9 @@ Describe 'Stop-SqlMcpSidecar' {
             $args[0] -eq 'stop' -and $args[1] -eq 'sql-mcp-test-1234'
         }
         Should -Invoke docker -ParameterFilter {
+            $args[0] -eq 'rm' -and $args[1] -eq '-f' -and $args[2] -eq 'sql-mcp-test-1234'
+        }
+        Should -Invoke docker -ParameterFilter {
             $args[0] -eq 'network' -and $args[1] -eq 'rm' -and $args[2] -eq 'dclaude-net-test-1234'
         }
     }

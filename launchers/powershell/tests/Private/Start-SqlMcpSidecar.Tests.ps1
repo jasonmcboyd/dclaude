@@ -20,7 +20,7 @@ Describe 'Start-SqlMcpSidecar' {
     Context 'when image exists and sidecar starts healthy' {
         It 'skips build, creates network, starts sidecar, and returns info' {
             # Image exists
-            Mock docker { return '{}' } -ParameterFilter {
+            Mock docker { $global:LASTEXITCODE = 0; return '{}' } -ParameterFilter {
                 $args[0] -eq 'image' -and $args[1] -eq 'inspect'
             }
             # Network create succeeds
@@ -99,6 +99,9 @@ Describe 'Start-SqlMcpSidecar' {
             Mock docker { return 'starting' } -ParameterFilter {
                 $args[0] -eq 'inspect'
             }
+            Mock docker { return 'sidecar log output' } -ParameterFilter {
+                $args[0] -eq 'logs'
+            }
 
             $conns = @((NewSecureString 'Server=x'))
             $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-t-1' -ModuleVersion ([version]'1.0.0') -ContainerOS linux -ErrorVariable err -ErrorAction SilentlyContinue
@@ -109,7 +112,7 @@ Describe 'Start-SqlMcpSidecar' {
 
             # Cleanup should be called
             Should -Invoke docker -ParameterFilter {
-                $args[0] -eq 'stop'
+                $args[0] -eq 'rm' -and $args[1] -eq '-f'
             }
             Should -Invoke docker -ParameterFilter {
                 $args[0] -eq 'network' -and $args[1] -eq 'rm'

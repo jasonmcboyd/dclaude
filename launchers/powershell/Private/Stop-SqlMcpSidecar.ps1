@@ -16,6 +16,7 @@ function Stop-SqlMcpSidecar {
     )
 
     docker stop $SidecarName 2>&1 | Out-Null
+    docker rm -f $SidecarName 2>&1 | Out-Null
     docker network rm $NetworkName 2>&1 | Out-Null
     Write-Host '[dclaude] Cleaned up SQL MCP sidecar.' -ForegroundColor DarkGray
 }

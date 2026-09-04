@@ -82,7 +82,7 @@ function Start-SqlMcpSidecar {
 
         # Build the sidecar docker run args with decrypted connection strings.
         $sidecarArgs = @(
-            'run', '-d', '--rm'
+            'run', '-d'
             '--name', $sidecarName
             '--network', $NetworkName
             '--network-alias', 'sql-mcp'
