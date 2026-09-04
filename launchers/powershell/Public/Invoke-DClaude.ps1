@@ -295,10 +295,26 @@ When a referenced path does not exist:
         $stagedBin = Join-Path $stageDir 'dclaude-entrypoint.exe'
         if (-not (Test-Path $stagedBin)) {
             New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
-            # Copy to a temp name then rename into place (atomic on NTFS), so an interrupted copy
-            # can't leave a truncated binary that the hash-keyed Test-Path would trust forever.
             $tmpBin = "$stagedBin.$PID.tmp"
-            Copy-Item $entrypointBin $tmpBin -Force
+            if ($entrypointBin -like '*.gz') {
+                # Decompress gzipped binary (shipped compressed to bypass Defender PE scanning
+                # during PowerShellGet extraction through %TEMP%).
+                $gzStream = $null; $outStream = $null; $fsIn = $null
+                try {
+                    $fsIn = [IO.File]::OpenRead($entrypointBin)
+                    $gzStream = [IO.Compression.GZipStream]::new($fsIn, [IO.Compression.CompressionMode]::Decompress)
+                    $outStream = [IO.File]::Create($tmpBin)
+                    $gzStream.CopyTo($outStream)
+                }
+                finally {
+                    if ($outStream) { $outStream.Dispose() }
+                    if ($gzStream) { $gzStream.Dispose() }
+                    if ($fsIn)     { $fsIn.Dispose() }
+                }
+            }
+            else {
+                Copy-Item $entrypointBin $tmpBin -Force
+            }
             Move-Item $tmpBin $stagedBin -Force
         }
         $dockerArgs += '-v'

@@ -11,7 +11,7 @@ function Get-DClaudeEntrypointBinary {
         Resolution order:
         1. DCLAUDE_ENTRYPOINT_SRC (development override) — a locally built binary, for fast
            iteration without rebuilding the module package.
-        2. The module-bundled binary: bin/dclaude-entrypoint-<os>-<arch>[.bin].
+        2. The module-bundled binary: bin/dclaude-entrypoint-<os>-<arch>[.bin.gz].
 
         Returns $null (with Write-Error) if no binary can be found, so the caller aborts rather
         than launching a container with no entrypoint.
@@ -39,7 +39,7 @@ function Get-DClaudeEntrypointBinary {
         'Arm64' { 'arm64' }
         default { 'amd64' }
     }
-    $ext = if ($ContainerOS -eq 'windows') { '.bin' } else { '' }
+    $ext = if ($ContainerOS -eq 'windows') { '.bin.gz' } else { '' }
     $name = "dclaude-entrypoint-$ContainerOS-$arch$ext"
 
     # bin/ is a sibling of Private/ in both the repo (launchers/powershell/) and installed module.

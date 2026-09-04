@@ -55,6 +55,17 @@ jobs:
         with:
           files: launchers/powershell/bin/*
 
+      # Gzip Windows binaries so Defender can't scan the PE header during
+      # PowerShellGet extraction to %TEMP%. The raw binaries are already
+      # attached to the release above; only the .gz copies ship in the module.
+      - name: Gzip Windows binaries for module packaging
+        run: |
+          bin="launchers/powershell/bin"
+          for f in "$bin"/dclaude-entrypoint-windows-*.bin; do
+            gzip "$f"
+          done
+          ls -l "$bin"
+
       - name: Create module manifest (bundles bin/)
         shell: pwsh
         env:

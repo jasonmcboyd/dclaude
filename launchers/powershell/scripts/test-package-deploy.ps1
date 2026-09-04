@@ -60,6 +60,16 @@ try {
         Write-Host "[pkg] building $out" -ForegroundColor DarkGray
         go build -trimpath -ldflags "-s -w -X main.version=$tag" -o $out .
         if ($LASTEXITCODE -ne 0) { throw "go build failed for $t" }
+        if ($os -eq 'windows') {
+            $gzPath = "$out.gz"
+            Write-Host "[pkg] gzipping $out -> $gzPath" -ForegroundColor DarkGray
+            $fsIn = [IO.File]::OpenRead($out)
+            $fsOut = [IO.File]::Create($gzPath)
+            $gz = [IO.Compression.GZipStream]::new($fsOut, [IO.Compression.CompressionMode]::Compress)
+            try { $fsIn.CopyTo($gz) }
+            finally { $gz.Dispose(); $fsOut.Dispose(); $fsIn.Dispose() }
+            Remove-Item $out -Force
+        }
     }
 }
 finally {
