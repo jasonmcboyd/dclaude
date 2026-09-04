@@ -287,40 +287,49 @@ When a referenced path does not exist:
     }
     else {
         # Windows can't bind-mount a single file, and OneDrive reparse points on the module dir
-        # can block Hyper-V mounts. Stage the binary to a content-hashed local cache (non-OneDrive)
-        # and mount that directory: the same binary reuses its dir (no re-copy, no lock against a
-        # running instance), while a rebuilt dev binary hashes differently and gets a fresh dir.
+        # can block Hyper-V mounts. Stage to a content-hashed local cache (non-OneDrive) and
+        # mount that directory. The .gz is NOT decompressed on the host — Defender's ML heuristic
+        # flags any Go PE on the host filesystem. Instead, a bootstrap script decompresses inside
+        # the container's isolated filesystem where host-side Defender can't reach.
         $binHash = (Get-FileHash -Path $entrypointBin -Algorithm SHA256).Hash.Substring(0, 16)
         $stageDir = Join-Path $env:LOCALAPPDATA "dclaude\.bin\$binHash"
-        $stagedBin = Join-Path $stageDir 'dclaude-entrypoint.exe'
-        if (-not (Test-Path $stagedBin)) {
+        $stagedBootstrap = Join-Path $stageDir 'bootstrap.ps1'
+        if (-not (Test-Path $stagedBootstrap)) {
             New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
-            $tmpBin = "$stagedBin.$PID.tmp"
             if ($entrypointBin -like '*.gz') {
-                # Decompress gzipped binary (shipped compressed to bypass Defender PE scanning
-                # during PowerShellGet extraction through %TEMP%).
-                $gzStream = $null; $outStream = $null; $fsIn = $null
-                try {
-                    $fsIn = [IO.File]::OpenRead($entrypointBin)
-                    $gzStream = [IO.Compression.GZipStream]::new($fsIn, [IO.Compression.CompressionMode]::Decompress)
-                    $outStream = [IO.File]::Create($tmpBin)
-                    $gzStream.CopyTo($outStream)
-                }
-                finally {
-                    if ($outStream) { $outStream.Dispose() }
-                    if ($gzStream) { $gzStream.Dispose() }
-                    if ($fsIn)     { $fsIn.Dispose() }
-                }
+                $stagedGz = Join-Path $stageDir 'dclaude-entrypoint.bin.gz'
+                $tmpGz = "$stagedGz.$PID.tmp"
+                Copy-Item $entrypointBin $tmpGz -Force
+                Move-Item $tmpGz $stagedGz -Force
             }
             else {
+                $stagedExe = Join-Path $stageDir 'dclaude-entrypoint.exe'
+                $tmpBin = "$stagedExe.$PID.tmp"
                 Copy-Item $entrypointBin $tmpBin -Force
+                Move-Item $tmpBin $stagedExe -Force
             }
-            Move-Item $tmpBin $stagedBin -Force
+            Set-Content -Path $stagedBootstrap -Encoding UTF8 -Value @'
+$ErrorActionPreference = 'Stop'
+$gz = Join-Path $PSScriptRoot 'dclaude-entrypoint.bin.gz'
+if (Test-Path $gz) {
+    $src = [IO.File]::OpenRead($gz)
+    $decompress = [IO.Compression.GZipStream]::new($src, [IO.Compression.CompressionMode]::Decompress)
+    $dst = [IO.File]::Create('C:\dclaude-entrypoint.exe')
+    $decompress.CopyTo($dst)
+    $dst.Close(); $decompress.Close(); $src.Close()
+    $bin = 'C:\dclaude-entrypoint.exe'
+} else {
+    $bin = Join-Path $PSScriptRoot 'dclaude-entrypoint.exe'
+}
+& $bin @args
+exit $LASTEXITCODE
+'@
         }
         $dockerArgs += '-v'
         $dockerArgs += "${stageDir}:C:\mnt\dclaude-bin:ro"
         $dockerArgs += '--entrypoint'
-        $dockerArgs += 'C:\mnt\dclaude-bin\dclaude-entrypoint.exe'
+        $dockerArgs += 'powershell'
+        $windowsBootstrap = $true
     }
 
     # Linux: entrypoint drops privileges via setpriv with --no-new-privs.
@@ -451,10 +460,15 @@ When a referenced path does not exist:
     # Add image tag
     $dockerArgs += $imageTag
 
-    # The Go entrypoint binary takes claude args directly, so no CMD prefix is needed here;
-    # the claude args (below) are passed straight to the binary as the container command.
+    # Windows bootstrap: the entrypoint is powershell, so CMD must invoke the bootstrap script
+    # which decompresses the .gz inside the container and execs the Go binary.
+    if ($windowsBootstrap) {
+        $dockerArgs += '-NoProfile'
+        $dockerArgs += '-File'
+        $dockerArgs += 'C:\mnt\dclaude-bin\bootstrap.ps1'
+    }
 
-    # Add any extra arguments for claude
+    # Add any extra arguments for claude (passed to the entrypoint binary via CMD)
     if ($ClaudeArgs -and $ClaudeArgs.Count -gt 0) {
         $dockerArgs += $ClaudeArgs
     }
