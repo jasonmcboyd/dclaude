@@ -53,7 +53,7 @@ try {
     foreach ($t in $targets) {
         $parts = $t -split '/'
         $os = $parts[0]; $arch = $parts[1]
-        $ext = if ($os -eq 'windows') { '.exe' } else { '' }
+        $ext = if ($os -eq 'windows') { '.bin' } else { '' }
         $out = Join-Path $binDir "dclaude-entrypoint-$os-$arch$ext"
         # CGO_ENABLED=0 to match CI exactly: a static binary, so the gate tests what ships.
         $env:GOOS = $os; $env:GOARCH = $arch; $env:CGO_ENABLED = '0'

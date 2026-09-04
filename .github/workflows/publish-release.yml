@@ -40,7 +40,7 @@ jobs:
             arch="${target#*/}"
             ext=""
             if [ "$os" = "windows" ]; then
-              ext=".exe"
+              ext=".bin"
             fi
             out="$bin/dclaude-entrypoint-${os}-${arch}${ext}"
             echo "building $out"

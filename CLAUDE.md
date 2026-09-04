@@ -25,7 +25,7 @@ launchers/
     Private/                    #   internal helper functions
     tests/                      #   Pester 5 tests mirroring Public/ and Private/
     scripts/                    #   create-module-manifest.ps1 (CI manifest gen), reset-dev-environment.ps1, use-dev-entrypoint.ps1, test-package-deploy.ps1
-    bin/                        #   compiled Go entrypoint binaries (dclaude-entrypoint-<os>-<arch>[.exe]); built by CI, gitignored
+    bin/                        #   compiled Go entrypoint binaries (dclaude-entrypoint-<os>-<arch>[.bin]); built by CI, gitignored
 sidecars/
   sql-mcp/                      # Node.js MCP server for read-only SQL Server access
     server.js                   #   Streamable HTTP MCP server on port 3100
@@ -113,7 +113,7 @@ The runtime volume contains only Node.js + Claude Code (+ MinGit on Windows / bu
 
 - Workspace → mounted at the **host path** (translated for cross-platform: `C:\Users\jason\repos` → `/c/Users/jason/repos` on Linux containers), read-write
 - Runtime volume → mounted read-only (Node.js + Claude Code only — no entrypoint binary)
-- Go entrypoint binary → the platform-appropriate binary from `bin/` is mounted read-only at launch. On Windows the launcher first stages the binary to a content-hashed `%LOCALAPPDATA%\dclaude\.bin\<hash>\` directory and mounts that directory (Windows can't bind-mount a single file; staging also avoids OneDrive reparse points and the running-executable lock). Dev override: `DCLAUDE_ENTRYPOINT_SRC` points at a locally built binary.
+- Go entrypoint binary → the platform-appropriate binary from `bin/` is mounted read-only at launch. Windows binaries ship with a `.bin` extension (not `.exe`) to avoid Defender ML heuristic false positives during PowerShellGet extraction and in the module folder. On Windows the launcher stages the binary to a content-hashed `%LOCALAPPDATA%\dclaude\.bin\<hash>\` directory, renaming it to `.exe` during staging, and mounts that directory (Windows can't bind-mount a single file; staging also avoids OneDrive reparse points and the running-executable lock). The `.exe` extension only exists in the staging directory — never in `%TEMP%` or the module folder. Dev override: `DCLAUDE_ENTRYPOINT_SRC` points at a locally built binary.
 - `~/.claude` → mounted **directly** at the container's `~/.claude` (`/home/claude/.claude` on Linux, `C:/Users/ContainerAdministrator/.claude` on Windows), read-write
 - `.claude.json` → Linux: nested read-only bind mount inside the `.claude` directory mount; Windows: symlinked into `~/.claude/` by `Initialize-DClaudeWindowsContainers`
 - Linux cross-platform directories (`plugins/`, `session-env/`) → masked with tmpfs overlays to hide Windows-specific content
@@ -147,7 +147,7 @@ The host-side key (for locating the project dir on the host) is derived from the
 
 ### Entrypoint
 
-The Go binary (`dclaude-entrypoint-<os>-<arch>[.exe]`) is the sole container entrypoint. It is built from the `entrypoint/` Go module, shipped inside the PowerShell module under `bin/`, and mounted read-only into the container at launch. There are no shell entrypoints. The bootstrap sequence is:
+The Go binary (`dclaude-entrypoint-<os>-<arch>[.bin]`) is the sole container entrypoint. It is built from the `entrypoint/` Go module, shipped inside the PowerShell module under `bin/`, and mounted read-only into the container at launch. There are no shell entrypoints. The bootstrap sequence is:
 
 1. Set up PATH to include the runtime volume's Node.js (and MinGit on Windows)
 2. Create `claude` user at UID 1000 if not exists (Linux only — stock images won't have it)

@@ -94,8 +94,8 @@ Describe 'Get-DClaudeEntrypointBinary' {
             }
         }
 
-        It 'resolves the Windows binary name (with .exe extension)' {
-            $bundledName = "dclaude-entrypoint-windows-$script:hostArch.exe"
+        It 'resolves the Windows binary name (with .bin extension)' {
+            $bundledName = "dclaude-entrypoint-windows-$script:hostArch.bin"
             $bundledPath = Join-Path $script:bundledBinDir $bundledName
             $createdBinDir = -not (Test-Path $script:bundledBinDir)
             New-Item -ItemType Directory -Path $script:bundledBinDir -Force | Out-Null

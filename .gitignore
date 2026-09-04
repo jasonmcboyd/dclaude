@@ -39,6 +39,7 @@ node_modules/
 /entrypoint/dist/
 /entrypoint/dclaude-entrypoint
 /entrypoint/dclaude-entrypoint.exe
+/entrypoint/dclaude-entrypoint.bin
 
 # Bundled Go entrypoint binaries (built by CI / scripts/test-package-deploy.ps1, never committed)
 /launchers/powershell/bin/

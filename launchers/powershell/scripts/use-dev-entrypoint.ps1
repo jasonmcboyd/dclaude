@@ -56,7 +56,7 @@ if ($containerOS -notin @('linux', 'windows')) {
     throw "Unsupported Docker container mode: $containerOS"
 }
 
-$binaryName = if ($containerOS -eq 'windows') { 'dclaude-entrypoint.exe' } else { 'dclaude-entrypoint' }
+$binaryName = if ($containerOS -eq 'windows') { 'dclaude-entrypoint.bin' } else { 'dclaude-entrypoint' }
 $binary     = Join-Path $entrypointDir $binaryName
 
 if ($Build -or -not (Test-Path $binary)) {
