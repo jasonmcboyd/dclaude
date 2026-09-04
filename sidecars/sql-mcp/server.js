@@ -35,7 +35,7 @@ for (const [key, value] of Object.entries(process.env)) {
   if (!key.startsWith('SQL_CONN_')) continue;
   const name = parseConnectionName(value);
   try {
-    const pool = new sql.ConnectionPool(value);
+    const pool = new sql.ConnectionPool({ connectionString: value });
     await pool.connect();
     pools.set(name, pool);
     console.log(`[sql-mcp] Connected: ${name}`);
