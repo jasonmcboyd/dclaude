@@ -38,8 +38,8 @@
     One or more SecureString connection strings for SQL Server. Launches an SQL MCP sidecar
     container that holds the credentials and enforces read-only access. The main Claude
     container connects to the sidecar over a Docker network and never sees the connection
-    strings. Database names are parsed from the connection strings automatically. Linux
-    containers only.
+    strings. Database names are parsed from the connection strings automatically. Works with
+    both Linux and Windows containers.
 
     Example: -SqlConnection (Read-Host 'Connection string' -AsSecureString)
 
@@ -115,13 +115,6 @@ function Invoke-DClaude {
         return
     }
 
-    # Validate SqlConnection parameter
-    if ($SqlConnection) {
-        if ($containerOS -ne 'linux') {
-            Write-Error '-SqlConnection requires Linux containers. Windows containers are not supported for the SQL MCP sidecar.'
-            return
-        }
-    }
 
     # Confirm Docker access before doing any provisioning work
     if ($DockerAccess -and -not $Force) {
@@ -261,7 +254,7 @@ When a referenced path does not exist:
     $sidecar = $null
     if ($SqlConnection) {
         $networkName = "dclaude-net-${leafName}-${randomSuffix}"
-        $sidecar = Start-SqlMcpSidecar -SqlConnections $SqlConnection -NetworkName $networkName -ModuleVersion $moduleVersion
+        $sidecar = Start-SqlMcpSidecar -SqlConnections $SqlConnection -NetworkName $networkName -ModuleVersion $moduleVersion -ContainerOS $containerOS
         if (-not $sidecar) { return }
     }
     $dockerArgs = @(

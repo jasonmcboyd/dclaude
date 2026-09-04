@@ -37,7 +37,7 @@ Describe 'Start-SqlMcpSidecar' {
             }
 
             $conns = @((NewSecureString 'Server=localhost;Database=AppData'))
-            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-test-1234' -ModuleVersion ([version]'1.0.0')
+            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-test-1234' -ModuleVersion ([version]'1.0.0') -ContainerOS linux
 
             $result | Should -Not -BeNullOrEmpty
             $result.NetworkName | Should -Be 'dclaude-net-test-1234'
@@ -75,7 +75,7 @@ Describe 'Start-SqlMcpSidecar' {
             }
 
             $conns = @((NewSecureString 'Server=test'))
-            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-proj-42' -ModuleVersion ([version]'2.0.0')
+            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-proj-42' -ModuleVersion ([version]'2.0.0') -ContainerOS linux
 
             $result | Should -Not -BeNullOrEmpty
             Should -Invoke docker -ParameterFilter {
@@ -101,7 +101,7 @@ Describe 'Start-SqlMcpSidecar' {
             }
 
             $conns = @((NewSecureString 'Server=x'))
-            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-t-1' -ModuleVersion ([version]'1.0.0') -ErrorVariable err -ErrorAction SilentlyContinue
+            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-t-1' -ModuleVersion ([version]'1.0.0') -ContainerOS linux -ErrorVariable err -ErrorAction SilentlyContinue
 
             $result | Should -BeNullOrEmpty
             $err | Should -Not -BeNullOrEmpty
@@ -140,7 +140,7 @@ Describe 'Start-SqlMcpSidecar' {
                 (NewSecureString 'Server=srv1;Database=AppData')
                 (NewSecureString 'Server=srv2;Database=InvestorData')
             )
-            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-m-1' -ModuleVersion ([version]'1.0.0')
+            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-m-1' -ModuleVersion ([version]'1.0.0') -ContainerOS linux
 
             $result | Should -Not -BeNullOrEmpty
             $runArgs = $script:capturedRunArgs -join ' '
@@ -159,7 +159,7 @@ Describe 'Start-SqlMcpSidecar' {
             }
 
             $conns = @((NewSecureString 'Server=x'))
-            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-f-1' -ModuleVersion ([version]'1.0.0') -ErrorVariable err -ErrorAction SilentlyContinue
+            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-f-1' -ModuleVersion ([version]'1.0.0') -ContainerOS linux -ErrorVariable err -ErrorAction SilentlyContinue
 
             $result | Should -BeNullOrEmpty
             $err | Should -Not -BeNullOrEmpty

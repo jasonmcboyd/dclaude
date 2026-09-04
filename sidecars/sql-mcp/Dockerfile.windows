@@ -1,0 +1,27 @@
+# escape=`
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+
+SHELL ["powershell", "-NoProfile", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+ARG NODE_VERSION=22.14.0
+
+RUN Invoke-WebRequest -UseBasicParsing `
+      ('https://nodejs.org/dist/v' + $env:NODE_VERSION + '/node-v' + $env:NODE_VERSION + '-win-x64.zip') `
+      -OutFile C:\node-dist.zip; `
+    Expand-Archive C:\node-dist.zip -DestinationPath C:\node-tmp; `
+    Move-Item ('C:\node-tmp\node-v' + $env:NODE_VERSION + '-win-x64') C:\nodejs; `
+    Remove-Item C:\node-dist.zip, C:\node-tmp -Recurse
+
+RUN [System.Environment]::SetEnvironmentVariable( `
+      'PATH', `
+      'C:\nodejs;' + [System.Environment]::GetEnvironmentVariable('PATH', 'Machine'), `
+      'Machine')
+
+WORKDIR C:\app
+COPY package.json package-lock.json ./
+RUN npm ci --production
+COPY server.js .
+
+EXPOSE 3100
+HEALTHCHECK --interval=5s --timeout=3s CMD ["C:\\nodejs\\node.exe", "-e", "fetch('http://localhost:3100/health').then(r=>{if(!r.ok)process.exit(1)})"]
+CMD ["C:\\nodejs\\node.exe", "server.js"]

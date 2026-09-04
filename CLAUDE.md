@@ -194,7 +194,7 @@ Accepts one or more `[SecureString]` connection strings. The sidecar parses each
 
 **MCP tools exposed:** `list-databases`, `list-tables(database, schema?)`, `describe-table(database, schema, table)`, `query(database, sql)`.
 
-**Constraints:** Linux containers only. The sidecar image is `node:22-slim` (glibc).
+**Constraints:** The sidecar image is `node:22-slim` (glibc) on Linux and `servercore:ltsc2022` with Node.js on Windows. The correct Dockerfile is selected automatically based on the Docker container OS mode.
 
 ## Logging / Verbosity
 

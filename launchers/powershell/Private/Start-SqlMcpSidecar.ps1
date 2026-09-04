@@ -19,10 +19,14 @@ function Start-SqlMcpSidecar {
         [string]$NetworkName,
 
         [Parameter(Mandatory)]
-        [version]$ModuleVersion
+        [version]$ModuleVersion,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('linux', 'windows')]
+        [string]$ContainerOS
     )
 
-    $imageTag = "dclaude-sql-mcp:v$ModuleVersion"
+    $imageTag = "dclaude-sql-mcp-${ContainerOS}:v$ModuleVersion"
     $sidecarName = "sql-mcp-$($NetworkName -replace '^dclaude-net-', '')"
 
     # Build the sidecar image if it doesn't already exist.
@@ -31,18 +35,19 @@ function Start-SqlMcpSidecar {
         # sidecars/ is a sibling of Private/ in the installed module layout.
         # In the dev repo it lives at the repo root; try both locations.
         $moduleRoot = Split-Path $PSScriptRoot
-        $dockerfilePath = Join-Path $moduleRoot 'sidecars/sql-mcp'
-        if (-not (Test-Path (Join-Path $dockerfilePath 'Dockerfile'))) {
-            # Dev repo layout: launchers/powershell/Private -> repo root is 3 levels up
+        $sidecarDir = Join-Path $moduleRoot 'sidecars/sql-mcp'
+        if (-not (Test-Path (Join-Path $sidecarDir 'Dockerfile'))) {
             $repoRoot = Split-Path (Split-Path $moduleRoot)
-            $dockerfilePath = Join-Path $repoRoot 'sidecars/sql-mcp'
+            $sidecarDir = Join-Path $repoRoot 'sidecars/sql-mcp'
         }
-        if (-not (Test-Path (Join-Path $dockerfilePath 'Dockerfile'))) {
-            Write-Error "SQL MCP sidecar Dockerfile not found. Expected at: $dockerfilePath"
+        $dockerfile = if ($ContainerOS -eq 'windows') { 'Dockerfile.windows' } else { 'Dockerfile' }
+        $dockerfileFull = Join-Path $sidecarDir $dockerfile
+        if (-not (Test-Path $dockerfileFull)) {
+            Write-Error "SQL MCP sidecar Dockerfile not found. Expected at: $dockerfileFull"
             return
         }
         Write-Host '[dclaude] Building SQL MCP sidecar image...' -ForegroundColor DarkGray
-        docker build -t $imageTag -q $dockerfilePath 2>&1 | Out-Null
+        docker build -t $imageTag -f $dockerfileFull -q $sidecarDir 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Failed to build SQL MCP sidecar image."
             return
