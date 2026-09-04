@@ -394,7 +394,7 @@ exit $LASTEXITCODE
 
     # Inject MCP sidecar config for the Go entrypoint to merge into .claude.json
     if ($sidecar) {
-        $mcpInject = @{ 'sql-mcp' = @{ url = $sidecar.McpUrl } } | ConvertTo-Json -Compress
+        $mcpInject = @{ 'sql-mcp' = @{ type = 'http'; url = $sidecar.McpUrl } } | ConvertTo-Json -Compress
         $dockerArgs += '-e'
         $dockerArgs += "DCLAUDE_MCP_INJECT=$mcpInject"
     }
