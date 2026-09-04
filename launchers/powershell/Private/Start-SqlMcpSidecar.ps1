@@ -37,10 +37,12 @@ function Start-SqlMcpSidecar {
         # Build the sidecar image if it doesn't already exist.
         docker image inspect $imageTag 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
+            # Installed module: sidecars/ is bundled inside the module root.
+            # Dev repo: sidecars/ is at the repo root (3 levels up from Private/).
             $moduleRoot = Split-Path $PSScriptRoot
             $sidecarDir = Join-Path $moduleRoot 'sidecars/sql-mcp'
             if (-not (Test-Path (Join-Path $sidecarDir 'Dockerfile'))) {
-                $repoRoot = Split-Path (Split-Path $moduleRoot)
+                $repoRoot = Split-Path (Split-Path (Split-Path $PSScriptRoot))
                 $sidecarDir = Join-Path $repoRoot 'sidecars/sql-mcp'
             }
             $dockerfile = if ($ContainerOS -eq 'windows') { 'Dockerfile.windows' } else { 'Dockerfile' }

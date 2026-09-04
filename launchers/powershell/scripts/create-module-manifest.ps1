@@ -25,6 +25,14 @@ Copy-Item -Path (Join-Path $moduleRoot 'Public') -Destination $publishDir -Recur
 Copy-Item -Path (Join-Path $moduleRoot 'Private') -Destination $publishDir -Recurse -Force
 Copy-Item -Path (Join-Path $moduleRoot 'dclaude.psm1') -Destination $publishDir -Force
 
+# Bundle the SQL MCP sidecar (Dockerfiles + server code). The sidecar lives at the repo root
+# under sidecars/; copy it into the module so Start-SqlMcpSidecar can find it at install time.
+$repoRoot = Split-Path (Split-Path $moduleRoot)
+$sidecarsDir = Join-Path $repoRoot 'sidecars'
+if (Test-Path $sidecarsDir) {
+    Copy-Item -Path $sidecarsDir -Destination $publishDir -Recurse -Force
+}
+
 # Bundle the Go entrypoint binaries (built into bin/ before packaging — by CI or the local
 # deploy-test harness). They are mounted into the container at launch, so the module is
 # non-functional without them: fail loudly rather than ship a broken package.
