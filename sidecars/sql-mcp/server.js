@@ -27,6 +27,44 @@ function parseConnectionName(connStr) {
 }
 
 // ---------------------------------------------------------------------------
+// Connection string → mssql config object
+// ---------------------------------------------------------------------------
+function parseConnectionConfig(connStr) {
+  const pairs = new Map();
+  for (const part of connStr.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    pairs.set(part.slice(0, eq).trim().toLowerCase(), part.slice(eq + 1).trim());
+  }
+  const raw = pairs.get('server') || pairs.get('data source') || 'localhost';
+  const serverParts = raw.replace(/^tcp:/, '');
+  const [hostAndInstance, portStr] = serverParts.split(',');
+  const [host, instance] = hostAndInstance.split('\\');
+
+  const config = {
+    server: host,
+    database: pairs.get('database') || pairs.get('initial catalog') || undefined,
+    user: pairs.get('user id') || pairs.get('uid') || undefined,
+    password: pairs.get('password') || pairs.get('pwd') || undefined,
+    options: {
+      encrypt: (pairs.get('encrypt') || 'false').toLowerCase() === 'true',
+      trustServerCertificate: (pairs.get('trustservercertificate') || 'false').toLowerCase() === 'true',
+    },
+  };
+  if (instance) config.options.instanceName = instance;
+  if (portStr) config.port = parseInt(portStr, 10);
+  if (pairs.has('integrated security') || pairs.has('trusted_connection')) {
+    const val = (pairs.get('integrated security') || pairs.get('trusted_connection') || '').toLowerCase();
+    if (val === 'true' || val === 'sspi' || val === 'yes') {
+      config.options.trustedConnection = true;
+      delete config.user;
+      delete config.password;
+    }
+  }
+  return config;
+}
+
+// ---------------------------------------------------------------------------
 // Connection pools — one per SQL_CONN_{n} env var
 // ---------------------------------------------------------------------------
 const pools = new Map();
@@ -35,7 +73,8 @@ for (const [key, value] of Object.entries(process.env)) {
   if (!key.startsWith('SQL_CONN_')) continue;
   const name = parseConnectionName(value);
   try {
-    const pool = new sql.ConnectionPool({ connectionString: value });
+    const config = parseConnectionConfig(value);
+    const pool = new sql.ConnectionPool(config);
     await pool.connect();
     pools.set(name, pool);
     console.log(`[sql-mcp] Connected: ${name}`);
