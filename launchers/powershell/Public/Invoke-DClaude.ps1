@@ -236,6 +236,9 @@ When a referenced path does not exist:
     # Clean up stale runtime volumes from previous module versions
     Remove-StaleRuntimeVolumes -CurrentVersion $moduleVersion
 
+    # Clean up orphaned Docker networks from previous SQL MCP sidecar runs
+    Remove-StaleNetworks
+
     # Provision runtime volume (Node.js + Claude Code)
     $runtime = Initialize-RuntimeVolume -ContainerOS $containerOS -Version $moduleVersion
     if (-not $runtime) { return }

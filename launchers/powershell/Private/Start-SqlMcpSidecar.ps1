@@ -59,18 +59,6 @@ function Start-SqlMcpSidecar {
             }
         }
 
-        # Clean up any stale resources from a previous crashed run.
-        $staleContainer = docker inspect --format '{{.State.Status}}' $sidecarName 2>$null
-        if ($staleContainer) {
-            Write-Verbose "Removing stale sidecar container '$sidecarName'."
-            docker rm -f $sidecarName 2>&1 | Out-Null
-        }
-        $staleNetwork = docker network inspect $NetworkName 2>$null
-        if ($staleNetwork) {
-            Write-Verbose "Removing stale network '$NetworkName'."
-            docker network rm $NetworkName 2>&1 | Out-Null
-        }
-
         # Create the Docker network. Windows containers require 'nat'; Linux uses 'bridge'.
         $driver = if ($ContainerOS -eq 'windows') { 'nat' } else { 'bridge' }
         $networkOutput = docker network create -d $driver $NetworkName 2>&1

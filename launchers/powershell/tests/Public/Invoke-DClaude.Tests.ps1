@@ -17,6 +17,7 @@ BeforeAll {
     . "$PSScriptRoot/../../Private/Initialize-RuntimeVolume.ps1"
     . "$PSScriptRoot/../../Private/Initialize-DockerCliVolume.ps1"
     . "$PSScriptRoot/../../Private/Remove-StaleRuntimeVolumes.ps1"
+    . "$PSScriptRoot/../../Private/Remove-StaleNetworks.ps1"
     . "$PSScriptRoot/../../Private/Update-RuntimeIfOutdated.ps1"
     . "$PSScriptRoot/../../Private/Get-DClaudeEntrypointBinary.ps1"
     . "$PSScriptRoot/../../Private/Get-DClaudeHostOS.ps1"
@@ -94,6 +95,7 @@ Describe 'Invoke-DClaude' {
             }
         }
         Mock Remove-StaleRuntimeVolumes { }
+        Mock Remove-StaleNetworks { }
 
         # Mock the -Update outdated-check to a no-op so it never touches the registry or
         # provisions volumes during the normal launch-flow assertions.
@@ -704,6 +706,12 @@ Describe 'Invoke-DClaude' {
             Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
 
             Should -Invoke Remove-StaleRuntimeVolumes -Times 1
+        }
+
+        It 'calls Remove-StaleNetworks' {
+            Invoke-DClaude -Image 'test:latest' -Path $script:workDir -ClaudeConfigPath $script:claudeDir
+
+            Should -Invoke Remove-StaleNetworks -Times 1
         }
 
         It 'calls Initialize-RuntimeVolume' {
