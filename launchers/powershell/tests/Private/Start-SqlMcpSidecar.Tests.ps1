@@ -152,6 +152,40 @@ Describe 'Start-SqlMcpSidecar' {
         }
     }
 
+    Context 'when DnsServers are provided' {
+        It 'passes --dns flags to docker run' {
+            Mock docker { return '{}' } -ParameterFilter {
+                $args[0] -eq 'image' -and $args[1] -eq 'inspect'
+            }
+            Mock docker { $global:LASTEXITCODE = 0 } -ParameterFilter {
+                $args[0] -eq 'network' -and $args[1] -eq 'create'
+            }
+            $script:capturedRunArgs = $null
+            Mock docker {
+                $script:capturedRunArgs = $args
+                $global:LASTEXITCODE = 0
+            } -ParameterFilter {
+                $args[0] -eq 'run'
+            }
+            Mock docker { return 'healthy' } -ParameterFilter {
+                $args[0] -eq 'inspect'
+            }
+
+            $conns = @((NewSecureString 'Server=srv1;Database=AppData'))
+            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-dns-1' -ModuleVersion ([version]'1.0.0') -ContainerOS linux -DnsServers @('10.1.30.10', '10.1.30.11')
+
+            $result | Should -Not -BeNullOrEmpty
+            $runArgs = $script:capturedRunArgs
+            $dnsIndices = @()
+            for ($i = 0; $i -lt $runArgs.Count; $i++) {
+                if ($runArgs[$i] -eq '--dns') { $dnsIndices += $i }
+            }
+            $dnsIndices.Count | Should -Be 2
+            $runArgs[$dnsIndices[0] + 1] | Should -Be '10.1.30.10'
+            $runArgs[$dnsIndices[1] + 1] | Should -Be '10.1.30.11'
+        }
+    }
+
     Context 'when network creation fails' {
         It 'returns null with error' {
             Mock docker { return '{}' } -ParameterFilter {

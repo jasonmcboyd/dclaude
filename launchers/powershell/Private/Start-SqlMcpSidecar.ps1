@@ -23,7 +23,9 @@ function Start-SqlMcpSidecar {
 
         [Parameter(Mandatory)]
         [ValidateSet('linux', 'windows')]
-        [string]$ContainerOS
+        [string]$ContainerOS,
+
+        [string[]]$DnsServers = @()
     )
 
     $imageTag = "dclaude-sql-mcp-${ContainerOS}:v$ModuleVersion"
@@ -75,6 +77,11 @@ function Start-SqlMcpSidecar {
             '--network', $NetworkName
             '--network-alias', 'sql-mcp'
         )
+
+        foreach ($dns in $DnsServers) {
+            $sidecarArgs += '--dns'
+            $sidecarArgs += $dns
+        }
 
         for ($i = 0; $i -lt $SqlConnections.Count; $i++) {
             $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SqlConnections[$i])
