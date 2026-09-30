@@ -260,8 +260,9 @@ When a referenced path does not exist:
     $randomSuffix = Get-Random -Maximum 9999
     $containerName = "dclaude-${leafName}-${randomSuffix}"
 
-    # Resolve host DNS servers when -ForwardDns is specified
+    # Resolve host DNS servers and suffix search list when -ForwardDns is specified
     $dnsServers = @()
+    $dnsSuffixes = @()
     if ($ForwardDns) {
         $dnsServers = @(
             Get-DnsClientServerAddress -AddressFamily IPv4 |
@@ -269,11 +270,26 @@ When a referenced path does not exist:
                 ForEach-Object { $_.ServerAddresses } |
                 Select-Object -Unique
         )
+        $dnsSuffixes = @(
+            (Get-DnsClientGlobalSetting).SuffixSearchList |
+                Where-Object { $_ }
+        )
+        if ($dnsSuffixes.Count -eq 0) {
+            $dnsSuffixes = @(
+                Get-DnsClient |
+                    Where-Object { $_.ConnectionSpecificSuffix } |
+                    ForEach-Object { $_.ConnectionSpecificSuffix } |
+                    Select-Object -Unique
+            )
+        }
         if ($dnsServers.Count -eq 0) {
             Write-Warning '-ForwardDns: no IPv4 DNS servers found on this host; skipping DNS forwarding.'
         }
         else {
             Write-Verbose "[dns] Forwarding host DNS servers: $($dnsServers -join ', ')"
+            if ($dnsSuffixes.Count -gt 0) {
+                Write-Verbose "[dns] Forwarding DNS suffix search list: $($dnsSuffixes -join ', ')"
+            }
         }
     }
 
@@ -288,6 +304,7 @@ When a referenced path does not exist:
             ContainerOS    = $containerOS
         }
         if ($dnsServers.Count -gt 0) { $sidecarParams.DnsServers = $dnsServers }
+        if ($dnsSuffixes.Count -gt 0) { $sidecarParams.DnsSuffixes = $dnsSuffixes }
         $sidecar = Start-SqlMcpSidecar @sidecarParams
         if (-not $sidecar) { return }
     }

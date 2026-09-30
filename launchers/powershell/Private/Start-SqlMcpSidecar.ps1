@@ -25,7 +25,9 @@ function Start-SqlMcpSidecar {
         [ValidateSet('linux', 'windows')]
         [string]$ContainerOS,
 
-        [string[]]$DnsServers = @()
+        [string[]]$DnsServers = @(),
+
+        [string[]]$DnsSuffixes = @()
     )
 
     $imageTag = "dclaude-sql-mcp-${ContainerOS}:v$ModuleVersion"
@@ -81,6 +83,11 @@ function Start-SqlMcpSidecar {
         foreach ($dns in $DnsServers) {
             $sidecarArgs += '--dns'
             $sidecarArgs += $dns
+        }
+
+        if ($DnsSuffixes.Count -gt 0) {
+            $sidecarArgs += '-e'
+            $sidecarArgs += "DCLAUDE_DNS_SUFFIX=$($DnsSuffixes -join ',')"
         }
 
         for ($i = 0; $i -lt $SqlConnections.Count; $i++) {

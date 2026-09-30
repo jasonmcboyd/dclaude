@@ -186,6 +186,34 @@ Describe 'Start-SqlMcpSidecar' {
         }
     }
 
+    Context 'when DnsSuffixes are provided' {
+        It 'passes DCLAUDE_DNS_SUFFIX env var to docker run' {
+            Mock docker { return '{}' } -ParameterFilter {
+                $args[0] -eq 'image' -and $args[1] -eq 'inspect'
+            }
+            Mock docker { $global:LASTEXITCODE = 0 } -ParameterFilter {
+                $args[0] -eq 'network' -and $args[1] -eq 'create'
+            }
+            $script:capturedRunArgs = $null
+            Mock docker {
+                $script:capturedRunArgs = $args
+                $global:LASTEXITCODE = 0
+            } -ParameterFilter {
+                $args[0] -eq 'run'
+            }
+            Mock docker { return 'healthy' } -ParameterFilter {
+                $args[0] -eq 'inspect'
+            }
+
+            $conns = @((NewSecureString 'Server=srv1;Database=AppData'))
+            $result = Start-SqlMcpSidecar -SqlConnections $conns -NetworkName 'dclaude-net-sfx-1' -ModuleVersion ([version]'1.0.0') -ContainerOS linux -DnsSuffixes @('corp.example.com', 'example.com')
+
+            $result | Should -Not -BeNullOrEmpty
+            $runArgs = $script:capturedRunArgs -join ' '
+            $runArgs | Should -Match 'DCLAUDE_DNS_SUFFIX=corp\.example\.com,example\.com'
+        }
+    }
+
     Context 'when network creation fails' {
         It 'returns null with error' {
             Mock docker { return '{}' } -ParameterFilter {

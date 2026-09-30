@@ -21,7 +21,8 @@ WORKDIR C:\app
 COPY package.json package-lock.json ./
 RUN npm ci --production
 COPY server.js .
+COPY startup.ps1 .
 
 EXPOSE 3100
 HEALTHCHECK --interval=5s --timeout=3s CMD ["C:\\nodejs\\node.exe", "-e", "fetch('http://localhost:3100/health').then(r=>{if(!r.ok)process.exit(1)})"]
-CMD ["C:\\nodejs\\node.exe", "server.js"]
+CMD ["powershell", "-NoProfile", "-File", "C:\\app\\startup.ps1"]
