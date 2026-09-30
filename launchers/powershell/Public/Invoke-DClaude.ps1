@@ -43,6 +43,11 @@
 
     Example: -SqlConnection (Read-Host 'Connection string' -AsSecureString)
 
+.PARAMETER ForwardDns
+    Auto-detects the host machine's DNS servers and forwards them (via --dns) to all containers
+    dclaude starts (both the main container and the SQL MCP sidecar, if any). Use this when
+    containers need to resolve internal/corporate hostnames that Docker's default DNS cannot.
+
 .PARAMETER Update
     Before launching, check whether the runtime volume's Claude Code is older than the latest
     published version and provision an updated runtime volume if so. Running containers are
@@ -96,6 +101,8 @@ function Invoke-DClaude {
         [switch]$DockerAccess,
 
         [switch]$Force,
+
+        [switch]$ForwardDns,
 
         [switch]$Update
     )
@@ -253,17 +260,47 @@ When a referenced path does not exist:
     $randomSuffix = Get-Random -Maximum 9999
     $containerName = "dclaude-${leafName}-${randomSuffix}"
 
+    # Resolve host DNS servers when -ForwardDns is specified
+    $dnsServers = @()
+    if ($ForwardDns) {
+        $dnsServers = @(
+            Get-DnsClientServerAddress -AddressFamily IPv4 |
+                Where-Object { $_.ServerAddresses } |
+                ForEach-Object { $_.ServerAddresses } |
+                Select-Object -Unique
+        )
+        if ($dnsServers.Count -eq 0) {
+            Write-Warning '-ForwardDns: no IPv4 DNS servers found on this host; skipping DNS forwarding.'
+        }
+        else {
+            Write-Verbose "[dns] Forwarding host DNS servers: $($dnsServers -join ', ')"
+        }
+    }
+
     # Start SQL MCP sidecar if requested
     $sidecar = $null
     if ($SqlConnection) {
         $networkName = "dclaude-net-${leafName}-${randomSuffix}"
-        $sidecar = Start-SqlMcpSidecar -SqlConnections $SqlConnection -NetworkName $networkName -ModuleVersion $moduleVersion -ContainerOS $containerOS
+        $sidecarParams = @{
+            SqlConnections = $SqlConnection
+            NetworkName    = $networkName
+            ModuleVersion  = $moduleVersion
+            ContainerOS    = $containerOS
+        }
+        if ($dnsServers.Count -gt 0) { $sidecarParams.DnsServers = $dnsServers }
+        $sidecar = Start-SqlMcpSidecar @sidecarParams
         if (-not $sidecar) { return }
     }
     $dockerArgs = @(
         'run', '-it', '--rm'
         '--name', $containerName
     )
+
+    # Forward host DNS servers to the main container
+    foreach ($dns in $dnsServers) {
+        $dockerArgs += '--dns'
+        $dockerArgs += $dns
+    }
 
     # Join the sidecar's Docker network
     if ($sidecar) {
