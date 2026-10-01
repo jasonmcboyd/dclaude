@@ -49,7 +49,7 @@ function Set-DClaudeDefaultImageKey {
         [string]$Scope = 'ProjectLocal'
     )
 
-    $resolved = Resolve-SettingsScope -Scope $Scope
+    $resolved = Resolve-SettingsScope -Scope $Scope -ForWrite
     if (-not $resolved) { return }
 
     $config = Read-SettingsFile -Directory $resolved.Directory -FileName $resolved.FileName

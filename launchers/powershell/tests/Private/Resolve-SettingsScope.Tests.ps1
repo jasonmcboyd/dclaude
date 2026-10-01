@@ -50,6 +50,24 @@ Describe 'Resolve-SettingsScope' {
         }
     }
 
+    Context 'ForWrite with ancestor .dclaude' {
+        It 'does not prompt when .dclaude is in the starting directory' {
+            $projectDir = Join-Path $TestDrive 'direct-project'
+            $dclaudeDir = Join-Path $projectDir '.dclaude'
+            New-Item -ItemType Directory -Path $dclaudeDir -Force | Out-Null
+
+            $result = Resolve-SettingsScope -Scope ProjectLocal -Path $projectDir -ForWrite
+            $result.Directory | Should -Be $dclaudeDir
+            $result.FileName | Should -Be 'settings.local.json'
+        }
+
+        It 'does not prompt for User scope even with -ForWrite' {
+            $result = Resolve-SettingsScope -Scope User -ForWrite
+            $result.Directory | Should -Be (Join-Path $HOME '.dclaude')
+            $result.FileName | Should -Be 'settings.json'
+        }
+    }
+
     Context 'ProjectLocal scope' {
         It 'returns settings.local.json filename' {
             $projectDir = Join-Path $TestDrive 'myproject2'

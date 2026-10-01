@@ -6,7 +6,9 @@ function Resolve-SettingsScope {
         [string]$Scope,
 
         [Parameter()]
-        [string]$Path = $PWD
+        [string]$Path = $PWD,
+
+        [switch]$ForWrite
     )
 
     if ($Scope -eq 'User') {
@@ -16,12 +18,54 @@ function Resolve-SettingsScope {
         }
     }
 
+    $startPath = (Resolve-Path -Path $Path).Path
+    $fileName = if ($Scope -eq 'ProjectLocal') { 'settings.local.json' } else { 'settings.json' }
+
     # Walk up the directory tree looking for a .dclaude folder
-    $current = (Resolve-Path -Path $Path).Path
+    $current = $startPath
     while ($current) {
         $configDir = Join-Path $current '.dclaude'
         if (Test-Path -Path $configDir -PathType Container) {
-            $fileName = if ($Scope -eq 'ProjectLocal') { 'settings.local.json' } else { 'settings.json' }
+            $foundInAncestor = $current -ne $startPath
+
+            if ($ForWrite -and $foundInAncestor) {
+                $localDir = Join-Path $startPath '.dclaude'
+                $choices = @(
+                    [System.Management.Automation.Host.ChoiceDescription]::new(
+                        '&Nearest',
+                        "Update $configDir\$fileName"
+                    )
+                    [System.Management.Automation.Host.ChoiceDescription]::new(
+                        'Create &local',
+                        "Create $localDir and write to $localDir\$fileName"
+                    )
+                    [System.Management.Automation.Host.ChoiceDescription]::new(
+                        '&Cancel',
+                        'Do nothing'
+                    )
+                )
+                $decision = $Host.UI.PromptForChoice(
+                    'No .dclaude in current directory',
+                    "Found .dclaude in ancestor: $configDir",
+                    $choices,
+                    0
+                )
+
+                switch ($decision) {
+                    0 { <# use the ancestor — fall through #> }
+                    1 {
+                        New-Item -ItemType Directory -Path $localDir -Force | Out-Null
+                        return [PSCustomObject]@{
+                            Directory = $localDir
+                            FileName  = $fileName
+                        }
+                    }
+                    default {
+                        return $null
+                    }
+                }
+            }
+
             return [PSCustomObject]@{
                 Directory = $configDir
                 FileName  = $fileName

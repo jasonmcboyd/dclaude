@@ -37,7 +37,7 @@ function Remove-DClaudeVolume {
         [string]$Scope = 'ProjectLocal'
     )
 
-    $resolved = Resolve-SettingsScope -Scope $Scope
+    $resolved = Resolve-SettingsScope -Scope $Scope -ForWrite
     if (-not $resolved) { return }
 
     $platKey = $Platform.ToLower()
