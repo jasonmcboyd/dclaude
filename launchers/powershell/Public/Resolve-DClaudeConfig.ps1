@@ -34,22 +34,80 @@ function Resolve-DClaudeConfig {
 
     $resolvedPath = (Resolve-Path -Path $Path).Path
 
-    # Walk ancestors collecting per-directory configs with source labels
+    # Walk ancestors collecting per-directory configs with source labels.
+    # Each .dclaude directory can have settings.json (project) and
+    # settings.local.json (project local). We split them into separate
+    # source entries so the display shows which file each setting came from.
+    # Shallow merge: if a property exists in both files, only the local
+    # entry carries it (local replaces base within the same directory).
     $sources = @()
     $current = $resolvedPath
     $sourceIndex = 1
     while ($current) {
         $configDir = Join-Path $current '.dclaude'
         if (Test-Path -Path $configDir -PathType Container) {
-            $cfg = Merge-SettingsFiles -Directory $configDir -Label "project config ($configDir)"
-            if ($cfg) {
+            $base = Read-SettingsFile -Directory $configDir -FileName 'settings.json'
+            $local = Read-SettingsFile -Directory $configDir -FileName 'settings.local.json'
+
+            if ($base) {
+                $schemaErrors = Test-DClaudeSettingsSchema -Config $base -Label "project config ($configDir/settings.json)"
+                foreach ($e in $schemaErrors) { Write-Warning $e }
+                $baseProps = ($base.PSObject.Properties | ForEach-Object { $_.Name }) -join ', '
+                Write-Debug "[config] $configDir\settings.json: loaded ($baseProps)"
+            }
+            else {
+                Write-Debug "[config] $configDir\settings.json: not found"
+            }
+
+            if ($local) {
+                $schemaErrors = Test-DClaudeSettingsSchema -Config $local -Label "project config ($configDir/settings.local.json)"
+                foreach ($e in $schemaErrors) { Write-Warning $e }
+                $localProps = ($local.PSObject.Properties | ForEach-Object { $_.Name }) -join ', '
+                Write-Debug "[config] $configDir\settings.local.json: loaded ($localProps)"
+            }
+            else {
+                Write-Debug "[config] $configDir\settings.local.json: not found"
+            }
+
+            # Project local source (listed first — takes precedence)
+            if ($local) {
                 $sources += [PSCustomObject]@{
                     Index     = $sourceIndex
-                    Directory = $configDir
-                    Config    = $cfg
+                    Directory = "$configDir (project local)"
+                    Config    = $local
                     IsUser    = $false
                 }
                 $sourceIndex++
+            }
+
+            # Project source — strip properties that local overrides
+            if ($base) {
+                if ($local) {
+                    $filteredBase = [PSCustomObject]@{}
+                    foreach ($prop in $base.PSObject.Properties) {
+                        if (-not $local.PSObject.Properties[$prop.Name]) {
+                            $filteredBase | Add-Member -MemberType $prop.MemberType -Name $prop.Name -Value $prop.Value
+                        }
+                    }
+                    if ($filteredBase.PSObject.Properties.Count -gt 0) {
+                        $sources += [PSCustomObject]@{
+                            Index     = $sourceIndex
+                            Directory = "$configDir (project)"
+                            Config    = $filteredBase
+                            IsUser    = $false
+                        }
+                        $sourceIndex++
+                    }
+                }
+                else {
+                    $sources += [PSCustomObject]@{
+                        Index     = $sourceIndex
+                        Directory = "$configDir (project)"
+                        Config    = $base
+                        IsUser    = $false
+                    }
+                    $sourceIndex++
+                }
             }
         }
         $parent = Split-Path $current -Parent
