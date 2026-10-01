@@ -12,8 +12,8 @@ Describe 'Remove-DClaudeVolume' {
         Mock Save-SettingsFile { $script:savedConfig = $Config }
     }
 
-    Context 'when removing an existing volume' {
-        It 'removes the volume and saves' {
+    Context 'when removing by local path' {
+        It 'matches on the local path and removes the volume' {
             Mock Read-SettingsFile {
                 return [PSCustomObject]@{
                     volumes = [PSCustomObject]@{ linux = @('/a:/a:ro', '/b:/b:rw') }
@@ -23,11 +23,44 @@ Describe 'Remove-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a:ro' -Platform Linux -Scope Project
+            Remove-DClaudeVolume -LocalPath '/a' -Platform Linux -Scope Project
 
             Should -Invoke Save-SettingsFile -Times 1
             $script:savedConfig.volumes.linux | Should -HaveCount 1
             $script:savedConfig.volumes.linux[0] | Should -Be '/b:/b:rw'
+        }
+
+        It 'matches Windows drive-letter paths' {
+            Mock Read-SettingsFile {
+                return [PSCustomObject]@{
+                    volumes = [PSCustomObject]@{ windows = @('C:\data:C:\data:ro', 'C:\wrk:C:\wrk:rw') }
+                }
+            }
+            Mock Resolve-SettingsScope {
+                return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
+            }
+
+            Remove-DClaudeVolume -LocalPath 'C:\data' -Platform Windows -Scope Project
+
+            Should -Invoke Save-SettingsFile -Times 1
+            $script:savedConfig.volumes.windows | Should -HaveCount 1
+            $script:savedConfig.volumes.windows[0] | Should -Be 'C:\wrk:C:\wrk:rw'
+        }
+
+        It 'ignores trailing slashes when matching' {
+            Mock Read-SettingsFile {
+                return [PSCustomObject]@{
+                    volumes = [PSCustomObject]@{ windows = @('C:\data\:C:\data\:ro') }
+                }
+            }
+            Mock Resolve-SettingsScope {
+                return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
+            }
+
+            Remove-DClaudeVolume -LocalPath 'C:\data' -Platform Windows -Scope Project
+
+            Should -Invoke Save-SettingsFile -Times 1
+            $script:savedConfig.PSObject.Properties['volumes'] | Should -BeNullOrEmpty
         }
     }
 
@@ -45,7 +78,7 @@ Describe 'Remove-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a:ro' -Platform Linux -Scope Project
+            Remove-DClaudeVolume -LocalPath '/a' -Platform Linux -Scope Project
 
             $script:savedConfig.volumes.PSObject.Properties['linux'] | Should -BeNullOrEmpty
             $script:savedConfig.volumes.windows | Should -HaveCount 1
@@ -64,7 +97,7 @@ Describe 'Remove-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a:ro' -Platform Linux -Scope Project
+            Remove-DClaudeVolume -LocalPath '/a' -Platform Linux -Scope Project
 
             $script:savedConfig.PSObject.Properties['volumes'] | Should -BeNullOrEmpty
             $script:savedConfig.defaultImageKey | Should -Be 'pwsh'
@@ -82,10 +115,10 @@ Describe 'Remove-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/nonexistent:/path' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
+            Remove-DClaudeVolume -LocalPath '/nonexistent' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
 
             $err | Should -Not -BeNullOrEmpty
-            $err[0].ToString() | Should -BeLike "*not found*"
+            $err[0].ToString() | Should -BeLike "*No volume*found*"
             Should -Not -Invoke Save-SettingsFile
         }
     }
@@ -101,7 +134,7 @@ Describe 'Remove-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
+            Remove-DClaudeVolume -LocalPath '/a' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
 
             $err | Should -Not -BeNullOrEmpty
             Should -Not -Invoke Save-SettingsFile
@@ -117,7 +150,7 @@ Describe 'Remove-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
+            Remove-DClaudeVolume -LocalPath '/a' -Platform Linux -Scope Project -ErrorVariable err -ErrorAction SilentlyContinue
 
             $err | Should -Not -BeNullOrEmpty
             Should -Not -Invoke Save-SettingsFile
@@ -135,7 +168,7 @@ Describe 'Remove-DClaudeVolume' {
                 return [PSCustomObject]@{ Directory = $TestDrive; FileName = 'settings.json' }
             }
 
-            Remove-DClaudeVolume -Volume '/a:/a:ro' -Platform Linux -Scope Project -WhatIf
+            Remove-DClaudeVolume -LocalPath '/a' -Platform Linux -Scope Project -WhatIf
 
             Should -Not -Invoke Save-SettingsFile
         }
