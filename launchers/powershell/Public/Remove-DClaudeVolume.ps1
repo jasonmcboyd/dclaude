@@ -5,10 +5,12 @@
 .DESCRIPTION
     Removes one or more volume mount specifications from the 'volumes' object
     in the specified dclaude settings file under the given platform key.
-    Errors if a spec is not found in the target file.
+    Matches on the local (host) path — you don't need to specify the full
+    volume spec string.
 
-.PARAMETER Volume
-    One or more volume mount specifications to remove.
+.PARAMETER LocalPath
+    One or more host paths to remove. Each is matched against the local-path
+    portion of stored volume specs (the part before the first colon separator).
 
 .PARAMETER Platform
     Target platform: Windows or Linux.
@@ -18,15 +20,16 @@
     Defaults to ProjectLocal.
 
 .EXAMPLE
-    Remove-DClaudeVolume -Volume 'C:\data:/data:rw' -Platform Linux
+    Remove-DClaudeVolume C:\data -Platform Linux
 
-    Removes the volume from the project's settings.local.json Linux entries.
+    Removes the volume whose local path is C:\data from the project's
+    settings.local.json Linux entries.
 #>
 function Remove-DClaudeVolume {
     [CmdletBinding(SupportsShouldProcess)]
     param(
-        [Parameter(Mandatory)]
-        [string[]]$Volume,
+        [Parameter(Mandatory, Position = 0)]
+        [string[]]$LocalPath,
 
         [Parameter(Mandatory)]
         [ValidateSet('Windows', 'Linux')]
@@ -53,15 +56,27 @@ function Remove-DClaudeVolume {
     }
 
     $existing = [array]$config.volumes.$platKey
-    foreach ($v in $Volume) {
-        if ($v -notin $existing) {
-            Write-Error "Volume '$v' not found in $Scope config ($platKey)."
+
+    $toRemove = @()
+    foreach ($path in $LocalPath) {
+        $normalized = $path.TrimEnd('\', '/')
+        $matched = @($existing | Where-Object {
+            if ($_ -match '^([A-Za-z]:)?([^:]+):') {
+                $specLocal = "$($Matches[1])$($Matches[2])"
+            } else {
+                $specLocal = $_
+            }
+            $specLocal.TrimEnd('\', '/') -eq $normalized
+        })
+        if ($matched.Count -eq 0) {
+            Write-Error "No volume with local path '$path' found in $Scope config ($platKey)."
             return
         }
+        $toRemove += $matched
     }
 
-    if ($PSCmdlet.ShouldProcess("$Scope config ($platKey)", "Remove volumes: $($Volume -join ', ')")) {
-        $newList = @($existing | Where-Object { $_ -notin $Volume })
+    if ($PSCmdlet.ShouldProcess("$Scope config ($platKey)", "Remove volumes: $($toRemove -join ', ')")) {
+        $newList = @($existing | Where-Object { $_ -notin $toRemove })
         if ($newList.Count -eq 0) {
             $config.volumes.PSObject.Properties.Remove($platKey)
             $remainingKeys = @($config.volumes.PSObject.Properties)
