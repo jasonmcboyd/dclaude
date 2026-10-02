@@ -123,131 +123,137 @@ function getPool(name) {
 }
 
 // ---------------------------------------------------------------------------
-// MCP Server
+// MCP Server — factory creates a fresh instance per session so multiple
+// transports can coexist (the SDK forbids connecting two transports to one
+// Protocol instance).
 // ---------------------------------------------------------------------------
-const mcpServer = new McpServer(
-  { name: 'sql-mcp', version: '1.0.0' },
-  { capabilities: { tools: {} } },
-);
+function createMcpServer() {
+  const server = new McpServer(
+    { name: 'sql-mcp', version: '1.0.0' },
+    { capabilities: { tools: {} } },
+  );
 
-mcpServer.registerTool(
-  'list-databases',
-  {
-    description: 'List the available database connection names.',
-  },
-  () => ({
-    content: [{ type: 'text', text: JSON.stringify(availableNames, null, 2) }],
-  }),
-);
-
-mcpServer.registerTool(
-  'list-tables',
-  {
-    description: 'List tables and views in a database, optionally filtered by schema.',
-    inputSchema: z.object({
-      database: z.string().describe('Database connection name'),
-      schema: z.string().optional().describe('Schema filter (e.g. dbo)'),
+  server.registerTool(
+    'list-databases',
+    {
+      description: 'List the available database connection names.',
+    },
+    () => ({
+      content: [{ type: 'text', text: JSON.stringify(availableNames, null, 2) }],
     }),
-  },
-  async ({ database, schema }) => {
-    const result = getPool(database);
-    if (result.error) return { content: [{ type: 'text', text: result.error }], isError: true };
-    try {
-      const request = result.pool.request();
-      let query = 'SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES';
-      if (schema) {
+  );
+
+  server.registerTool(
+    'list-tables',
+    {
+      description: 'List tables and views in a database, optionally filtered by schema.',
+      inputSchema: z.object({
+        database: z.string().describe('Database connection name'),
+        schema: z.string().optional().describe('Schema filter (e.g. dbo)'),
+      }),
+    },
+    async ({ database, schema }) => {
+      const result = getPool(database);
+      if (result.error) return { content: [{ type: 'text', text: result.error }], isError: true };
+      try {
+        const request = result.pool.request();
+        let query = 'SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES';
+        if (schema) {
+          request.input('schema', sql.NVarChar, schema);
+          query += ' WHERE TABLE_SCHEMA = @schema';
+        }
+        query += ' ORDER BY TABLE_SCHEMA, TABLE_NAME';
+        const rows = await request.query(query);
+        return { content: [{ type: 'text', text: JSON.stringify(rows.recordset, null, 2) }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `SQL error: ${err.message}` }], isError: true };
+      }
+    },
+  );
+
+  server.registerTool(
+    'describe-table',
+    {
+      description: 'Describe columns, types, and key constraints for a table.',
+      inputSchema: z.object({
+        database: z.string().describe('Database connection name'),
+        schema: z.string().default('dbo').describe('Table schema (default: dbo)'),
+        table: z.string().describe('Table name'),
+      }),
+    },
+    async ({ database, schema, table }) => {
+      const result = getPool(database);
+      if (result.error) return { content: [{ type: 'text', text: result.error }], isError: true };
+      try {
+        const request = result.pool.request();
         request.input('schema', sql.NVarChar, schema);
-        query += ' WHERE TABLE_SCHEMA = @schema';
+        request.input('table', sql.NVarChar, table);
+        const rows = await request.query(`
+          SELECT
+            c.COLUMN_NAME,
+            c.DATA_TYPE,
+            c.CHARACTER_MAXIMUM_LENGTH,
+            c.NUMERIC_PRECISION,
+            c.NUMERIC_SCALE,
+            c.IS_NULLABLE,
+            c.COLUMN_DEFAULT,
+            (
+              SELECT STRING_AGG(tc.CONSTRAINT_TYPE, ', ')
+              FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+              JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA
+              WHERE kcu.TABLE_SCHEMA = c.TABLE_SCHEMA
+                AND kcu.TABLE_NAME = c.TABLE_NAME
+                AND kcu.COLUMN_NAME = c.COLUMN_NAME
+            ) AS CONSTRAINTS
+          FROM INFORMATION_SCHEMA.COLUMNS c
+          WHERE c.TABLE_SCHEMA = @schema AND c.TABLE_NAME = @table
+          ORDER BY c.ORDINAL_POSITION
+        `);
+        if (rows.recordset.length === 0) {
+          return { content: [{ type: 'text', text: `Table [${schema}].[${table}] not found or has no columns.` }], isError: true };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(rows.recordset, null, 2) }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `SQL error: ${err.message}` }], isError: true };
       }
-      query += ' ORDER BY TABLE_SCHEMA, TABLE_NAME';
-      const rows = await request.query(query);
-      return { content: [{ type: 'text', text: JSON.stringify(rows.recordset, null, 2) }] };
-    } catch (err) {
-      return { content: [{ type: 'text', text: `SQL error: ${err.message}` }], isError: true };
-    }
-  },
-);
+    },
+  );
 
-mcpServer.registerTool(
-  'describe-table',
-  {
-    description: 'Describe columns, types, and key constraints for a table.',
-    inputSchema: z.object({
-      database: z.string().describe('Database connection name'),
-      schema: z.string().default('dbo').describe('Table schema (default: dbo)'),
-      table: z.string().describe('Table name'),
-    }),
-  },
-  async ({ database, schema, table }) => {
-    const result = getPool(database);
-    if (result.error) return { content: [{ type: 'text', text: result.error }], isError: true };
-    try {
-      const request = result.pool.request();
-      request.input('schema', sql.NVarChar, schema);
-      request.input('table', sql.NVarChar, table);
-      const rows = await request.query(`
-        SELECT
-          c.COLUMN_NAME,
-          c.DATA_TYPE,
-          c.CHARACTER_MAXIMUM_LENGTH,
-          c.NUMERIC_PRECISION,
-          c.NUMERIC_SCALE,
-          c.IS_NULLABLE,
-          c.COLUMN_DEFAULT,
-          (
-            SELECT STRING_AGG(tc.CONSTRAINT_TYPE, ', ')
-            FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
-            JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
-              ON kcu.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
-              AND kcu.TABLE_SCHEMA = tc.TABLE_SCHEMA
-            WHERE kcu.TABLE_SCHEMA = c.TABLE_SCHEMA
-              AND kcu.TABLE_NAME = c.TABLE_NAME
-              AND kcu.COLUMN_NAME = c.COLUMN_NAME
-          ) AS CONSTRAINTS
-        FROM INFORMATION_SCHEMA.COLUMNS c
-        WHERE c.TABLE_SCHEMA = @schema AND c.TABLE_NAME = @table
-        ORDER BY c.ORDINAL_POSITION
-      `);
-      if (rows.recordset.length === 0) {
-        return { content: [{ type: 'text', text: `Table [${schema}].[${table}] not found or has no columns.` }], isError: true };
+  server.registerTool(
+    'query',
+    {
+      description: 'Execute a read-only SQL query. Only SELECT statements are allowed. The query runs inside a transaction that is always rolled back.',
+      inputSchema: z.object({
+        database: z.string().describe('Database connection name'),
+        sql: z.string().describe('SQL SELECT query to execute'),
+      }),
+    },
+    async ({ database, sql: userSql }) => {
+      const result = getPool(database);
+      if (result.error) return { content: [{ type: 'text', text: result.error }], isError: true };
+
+      const validationError = validateSelectOnly(userSql);
+      if (validationError) {
+        return { content: [{ type: 'text', text: validationError }], isError: true };
       }
-      return { content: [{ type: 'text', text: JSON.stringify(rows.recordset, null, 2) }] };
-    } catch (err) {
-      return { content: [{ type: 'text', text: `SQL error: ${err.message}` }], isError: true };
-    }
-  },
-);
 
-mcpServer.registerTool(
-  'query',
-  {
-    description: 'Execute a read-only SQL query. Only SELECT statements are allowed. The query runs inside a transaction that is always rolled back.',
-    inputSchema: z.object({
-      database: z.string().describe('Database connection name'),
-      sql: z.string().describe('SQL SELECT query to execute'),
-    }),
-  },
-  async ({ database, sql: userSql }) => {
-    const result = getPool(database);
-    if (result.error) return { content: [{ type: 'text', text: result.error }], isError: true };
+      const transaction = new sql.Transaction(result.pool);
+      try {
+        await transaction.begin();
+        const rows = await transaction.request().query(userSql);
+        return { content: [{ type: 'text', text: JSON.stringify(rows.recordset, null, 2) }] };
+      } catch (err) {
+        return { content: [{ type: 'text', text: `SQL error: ${err.message}` }], isError: true };
+      } finally {
+        try { await transaction.rollback(); } catch { /* already rolled back or connection lost */ }
+      }
+    },
+  );
 
-    const validationError = validateSelectOnly(userSql);
-    if (validationError) {
-      return { content: [{ type: 'text', text: validationError }], isError: true };
-    }
-
-    const transaction = new sql.Transaction(result.pool);
-    try {
-      await transaction.begin();
-      const rows = await transaction.request().query(userSql);
-      return { content: [{ type: 'text', text: JSON.stringify(rows.recordset, null, 2) }] };
-    } catch (err) {
-      return { content: [{ type: 'text', text: `SQL error: ${err.message}` }], isError: true };
-    } finally {
-      try { await transaction.rollback(); } catch { /* already rolled back or connection lost */ }
-    }
-  },
-);
+  return server;
+}
 
 // ---------------------------------------------------------------------------
 // HTTP server with MCP + health endpoint
@@ -283,7 +289,8 @@ const httpServer = createServer(async (req, res) => {
       transport.onclose = () => {
         if (transport.sessionId) transports.delete(transport.sessionId);
       };
-      await mcpServer.connect(transport);
+      const server = createMcpServer();
+      await server.connect(transport);
     } else {
       res.writeHead(400, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Invalid or expired session' }));
